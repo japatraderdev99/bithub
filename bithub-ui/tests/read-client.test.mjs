@@ -304,6 +304,33 @@ describe("error paths", () => {
     assert.equal(r.status, 405);
     assert.equal(r.errorEnvelope.error.code, "validation_error");
   });
+
+  it("treats static Pages 200 read.error.v1 sentinel as explicit error", async () => {
+    const oldFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(
+      JSON.stringify({
+        schema_version: "read.error.v1",
+        served_at: "2026-05-26T00:00:00Z",
+        error: {
+          code: "api_unavailable_static_pages",
+          message: "Read Worker is not deployed for this static Pages site.",
+          request_id: "STATIC-PAGES-V1-GUARD",
+        },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      }
+    );
+    try {
+      const r = await _internals.request("/v1/health", {}, {});
+      assert.equal(r.kind, "error");
+      assert.equal(r.status, 200);
+      assert.equal(r.errorEnvelope.error.code, "api_unavailable_static_pages");
+    } finally {
+      globalThis.fetch = oldFetch;
+    }
+  });
 });
 
 describe("no secret/PII in any response", () => {

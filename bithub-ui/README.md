@@ -187,8 +187,15 @@ arquivo `bithub-ui/public/_headers` (X-Content-Type-Options, Referrer-
 Policy, Permissions-Policy restritiva, X-Frame-Options, COOP). CSP fica
 para H-014/RW-7 quando o origin do Worker real estiver definido.
 
+Enquanto o Read Worker real nao existir, `bithub-ui/public/_redirects`
+reescreve `/v1/*` para `v1-api-unavailable.json`. Isso impede que Pages
+static devolva `index.html` para URLs de API. O sentinela e um
+`read.error.v1`; `read-client.mjs` o trata como erro explicito mesmo que
+o host static responda `200` por causa da rewrite de Pages.
+
 `bithub-read-worker/` continua sendo skeleton **local** para dev/test;
-nao e deploy de Worker Cloudflare. Worker real entra em H-014.
+nao e deploy de Worker Cloudflare. Worker real entra em handoff proprio
+RW-2/RW-3/RW-7, sem ser liberado por Pages static.
 
 ## Headers e contrato
 

@@ -188,16 +188,17 @@ async function request(path, init = {}, opts = {}) {
     return blobResult(parsed, raw, headers, response.status);
   }
 
+  const errReasons = validateErrorEnvelope(parsed);
+  if (errReasons.length === 0) {
+    return {
+      kind: "error",
+      status: response.status,
+      errorEnvelope: parsed,
+      headers,
+    };
+  }
+
   if (response.status >= 400) {
-    const errReasons = validateErrorEnvelope(parsed);
-    if (errReasons.length === 0) {
-      return {
-        kind: "error",
-        status: response.status,
-        errorEnvelope: parsed,
-        headers,
-      };
-    }
     return {
       kind: "envelope_drift",
       reasons: errReasons,

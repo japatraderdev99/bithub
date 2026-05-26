@@ -185,6 +185,11 @@ KV — mas a API publica do `handleRequest` continua identica.
 7. **Sem auth, sem rate limit.** Cloudflare Access + WAF rate limit
    entram em RW-7 + handoff operacional separado.
 8. **Sem ETag/304.** Phase 0 v1 adia (R-001 13.2).
+9. **Pages static nao e API real.** Enquanto nao houver Read Worker
+   deployado, `public/_redirects` reescreve `/v1/*` para
+   `v1-api-unavailable.json`, um sentinela `read.error.v1`. O cliente
+   trata esse sentinela como erro explicito mesmo sob status 200 de
+   rewrite static.
 
 ## 4. Por que confiamos no Worker skeleton como fonte
 

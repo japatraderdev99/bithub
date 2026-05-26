@@ -11,8 +11,11 @@
 
 import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { createDevServer, PUBLIC_DIR, sanitizeUrlForLog } from "../scripts/dev-server.mjs";
+import { validateErrorEnvelope } from "../public/app/read-client.mjs";
 
 let server;
 let base;
@@ -152,6 +155,28 @@ describe("hygiene", () => {
       assert.ok(!text.includes("Traceback"), `traceback leak in ${p}`);
       assert.ok(!text.toLowerCase().includes("/users/"), `home path leak in ${p}: ${text.slice(0,80)}`);
     }
+  });
+});
+
+describe("Cloudflare Pages static /v1 guard", () => {
+  it("_redirects rewrites /v1/* before SPA fallback", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "_redirects"), "utf8");
+    const rules = body
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    assert.ok(
+      rules.includes("/v1/* /v1-api-unavailable.json 200"),
+      "expected static /v1/* rewrite guard"
+    );
+  });
+
+  it("static guard target is a valid read.error.v1 sentinel", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "v1-api-unavailable.json"), "utf8");
+    const parsed = JSON.parse(body);
+    assert.deepEqual(validateErrorEnvelope(parsed), []);
+    assert.equal(parsed.error.code, "api_unavailable_static_pages");
+    assert.ok(!("data" in parsed));
   });
 });
 

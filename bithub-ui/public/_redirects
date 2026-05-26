@@ -1,0 +1,8 @@
+# Cloudflare Pages static guard for Phase 0.
+#
+# The deployed Pages site is static-only. Until the real Read Worker is
+# deployed, every /v1/* request must resolve to an explicit JSON sentinel
+# instead of falling through to index.html and looking like an API drift.
+#
+# Cloudflare Pages applies the 200 rewrite before SPA fallback.
+/v1/* /v1-api-unavailable.json 200

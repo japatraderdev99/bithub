@@ -1,0 +1,9 @@
+{
+  "schema_version": "read.error.v1",
+  "served_at": "2026-05-26T00:00:00Z",
+  "error": {
+    "code": "api_unavailable_static_pages",
+    "message": "Read Worker is not deployed for this static Pages site.",
+    "request_id": "STATIC-PAGES-V1-GUARD"
+  }
+}
