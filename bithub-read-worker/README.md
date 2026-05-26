@@ -1,26 +1,26 @@
-# bithub-read-worker — Skeleton + KV local (H-013/RW-2)
+# bithub-read-worker — Skeleton + KV/D1 local (H-013/RW-2/RW-3)
 
 Worker de leitura **offline/local** que serve os envelopes canônicos
 `/v1/*` definidos em
 [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
 (R-20260525-001) a partir de fixtures determinísticas geradas pelo
-`bithub-data-layer` ou, no escopo RW-2, de um binding KV fake/local
-injetado em teste.
+`bithub-data-layer`, de um binding KV fake/local injetado em teste ou,
+no escopo RW-3, de um fallback D1 fake/local injetado em teste.
 
 Este skeleton **não é o Worker de produção**. É a ponte segura entre o
 backend e a UI prevista em
 [`Frontend-Dashboard-Architecture`](../bithub-vault/01-Architecture/Frontend-Dashboard-Architecture.md):
-a UI-1 (quando Codex emitir o handoff) consome este skeleton como API
-HTTP real e estável, em vez de inventar mocks no frontend. Quando RW-2 e
-RW-3 plugarem bindings KV/D1 reais, os mesmos clientes da UI continuam
-funcionando sem alteração contratual.
+a UI-1 consome este skeleton como API HTTP real e estável, em vez de
+inventar mocks no frontend. Quando handoffs futuros plugarem bindings
+KV/D1 reais, os mesmos clientes da UI continuam funcionando sem
+alteração contratual.
 
 ## Escopo declarado
 
 | Item | Skeleton | Worker real (futuro) |
 |---|---|---|
 | Runtime | Node 22+ (node:test) | Cloudflare Workers |
-| Dados | Fixtures JSON em disco + KV fake injetável | KV + D1 + R2 + presigned |
+| Dados | Fixtures JSON em disco + KV/D1 fake injetável | KV + D1 + R2 + presigned |
 | Auth | _stub_ (nenhuma validação) | Cloudflare Access JWT |
 | CORS | Allowlist hard-coded | Cloudflare Access |
 | Clock | Constantes determinísticas | `Date.now()` |
@@ -33,7 +33,7 @@ funcionando sem alteração contratual.
   `wrangler.toml`.
 - `wrangler`, `npx`, deploy, push, commit.
 - Leitura de `.env`, `process.env`, secrets, tokens, chaves Cloudflare.
-- Bindings KV/D1/R2 reais; consultas a `data_bundle_record`,
+- Bindings KV/D1/R2 reais; SQL real contra `data_bundle_record`,
   `*_snapshot_record`, `audit_event`, `source_status_event`.
 - R2 presigned URLs (R-B3 bloqueante registrado em
   [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
@@ -116,9 +116,57 @@ compactos H-010:
 - `public_config` e `feature_flags` podem ser dicts públicos compactos.
 
 O Worker continua sem `wrangler`, sem namespace real, sem `.env`, sem
-rede e sem escrita em KV. KV miss em ambiente local cai para fixture;
-JSON inválido, erro de `get()` ou token proibido no payload falha
-fechado com `read.error.v1` status `502`, sem stack.
+rede e sem escrita em KV. Sem bindings locais, os bytes das fixtures
+H-013 continuam intactos; em `/v1/health` e `/v1/bundles/latest`, KV
+miss/stale passa por D1 fake quando houver binding D1. JSON inválido,
+erro de `get()` ou token proibido no payload falha fechado ou cai para
+D1 fake conforme o contrato RW-3, sempre sem stack.
+
+## RW-3: D1 fake/local fallback
+
+RW-3 adiciona uma interface mínima de fallback D1 fake/local para
+`/v1/health` e `/v1/bundles/latest`. O binding canônico é
+`env.D1_BITHUB`; `env.DB_BITHUB` também é aceito apenas para ergonomia
+local.
+
+Interface do stub:
+
+```javascript
+const D1_BITHUB = {
+  async getReadModel(kind, params) {
+    // kind: "latest_health" | "latest_bundle"
+    // params: {} para latest_health
+    // params: { symbol, kvKey } para latest_bundle
+    return null;
+  }
+};
+```
+
+Contrato local:
+
+| Situação | Resultado |
+|---|---|
+| Sem KV/D1 local | fixture H-013 byte-a-byte |
+| KV hit fresco | envelope KV |
+| KV miss + D1 hit | envelope `source: "d1"` com warning `kv-miss-served-from-d1` |
+| KV stale + D1 hit | envelope `source: "d1"` com warning `kv-stale-served-from-d1` |
+| KV inválido/erro + D1 hit | envelope `source: "d1"` com warning `kv-error-served-from-d1` |
+| KV miss/stale + D1 indisponível | `read.error.v1` status `503`, sem stack |
+| D1 inválido/erro | `read.error.v1` status `502`, sem stack |
+
+O stub pode retornar um envelope `read.health.v1`/`read.bundle.v1`
+completo ou um read-model compacto `kv.latest_health.v1`/
+`kv.latest_bundle.v1`. Em ambos os casos, quando servido como fallback,
+o Worker força `source: "d1"` e adiciona o warning canônico de fallback.
+
+Query contract futuro, ainda sem SQL no runtime local:
+
+- `latest_health`: D1 agrega os últimos `source_status_event` por fonte;
+- `latest_bundle`: D1 lê o último `data_bundle_record` do símbolo e seus
+  `bundle_section_status_record` associados.
+
+RW-3 continua sem `wrangler`, sem D1 real, sem `.env`, sem rede e sem
+escrita em D1.
 
 ## Como rodar
 
@@ -183,6 +231,32 @@ const res = await handleRequest(
 console.log(res.status, await res.text());
 ```
 
+Exemplo com D1 fake:
+
+```javascript
+import { handleRequest } from "./src/index.mjs";
+
+const KV_BITHUB = { async get() { return null; } };
+const D1_BITHUB = {
+  async getReadModel(kind) {
+    if (kind !== "latest_health") return null;
+    return {
+      schema_version: "kv.latest_health.v1",
+      as_of: "2026-05-26T11:00:00Z",
+      generated_at: "2026-05-26T11:00:02Z",
+      overall_status: "ok",
+      sources: {}
+    };
+  }
+};
+
+const res = await handleRequest(
+  new Request("https://api.bit-hub.pro/v1/health"),
+  { KV_BITHUB, D1_BITHUB }
+);
+console.log(res.status, await res.text());
+```
+
 ## Layout
 
 ```
@@ -234,10 +308,11 @@ seção 15:
 1. **H-013/RW-1** — skeleton local com fixtures.
 2. **UI-1** — frontend shell consumindo este
    skeleton.
-3. **RW-2 (este)** — bindings KV fake/local injetáveis; `/v1/health`,
+3. **RW-2** — bindings KV fake/local injetáveis; `/v1/health`,
    `/v1/config/*` e `/v1/bundles/latest` tentam KV antes das fixtures.
-4. **RW-3** — D1 fallback + `/v1/bundles/latest` lendo D1 quando KV
-   miss/stale.
+4. **RW-3 (este)** — D1 fake/local para `/v1/health` e
+   `/v1/bundles/latest` quando KV estiver ausente, miss, stale ou
+   inválido.
 5. **RW-4** — `/v1/symbols`, `/v1/source-status`, `/v1/snapshots/{id}`
    contra D1.
 6. **RW-5** — `/v1/audit?run_id=...`, `/v1/bundles/{bundle_id}`.

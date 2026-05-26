@@ -43,6 +43,22 @@ function fakeKV(entries) {
   };
 }
 
+function fakeD1(entries) {
+  const calls = [];
+  return {
+    calls,
+    async getReadModel(kind, params) {
+      calls.push({ kind, params });
+      const key = kind === "latest_bundle"
+        ? `latest_bundle:${params.symbol}`
+        : kind;
+      return Object.prototype.hasOwnProperty.call(entries, key)
+        ? entries[key]
+        : null;
+    },
+  };
+}
+
 // --------------------------------------------------------------------------
 // Module surface
 // --------------------------------------------------------------------------
@@ -61,6 +77,7 @@ describe("module surface", () => {
     assert.ok(_internals.CORS_ALLOWED_ORIGINS instanceof Set);
     assert.ok(_internals.ROUTE_FIXTURES);
     assert.deepEqual(_internals.KV_BINDING_NAMES, ["KV_BITHUB", "KV"]);
+    assert.deepEqual(_internals.D1_BINDING_NAMES, ["D1_BITHUB", "DB_BITHUB"]);
     assert.equal(_internals.KV_KEY_PUBLIC_CONFIG, "public_config");
     assert.equal(_internals.KV_KEY_FEATURE_FLAGS, "feature_flags");
     assert.equal(_internals.KV_KEY_LATEST_HEALTH, "latest_health:data_layer");
@@ -304,11 +321,15 @@ describe("RW-2 KV fake/local binding", () => {
     assert.deepEqual(KV_BITHUB.calls, ["latest_bundle:BTC/USDT:USDT"]);
   });
 
-  test("KV miss cai para fixture local", async () => {
+  test("KV miss em health com binding local e sem D1 falha fechado", async () => {
     const KV_BITHUB = fakeKV({});
     const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB });
-    assert.equal(res.status, 200);
-    assert.equal(await res.text(), loadFixture("health.json"));
+    assert.equal(res.status, 503);
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.schema_version, "read.error.v1");
+    assert.equal(parsed.error.code, "network_error");
+    assert.ok(!body.includes("TypeError"));
     assert.deepEqual(KV_BITHUB.calls, ["latest_health:data_layer"]);
   });
 
@@ -343,6 +364,214 @@ describe("RW-2 KV fake/local binding", () => {
     const res = await workerDefault.fetch(makeReq("/v1/config/public"), { KV_BITHUB });
     const parsed = JSON.parse(await res.text());
     assert.equal(parsed.data.build_id, "default-fetch-kv");
+  });
+});
+
+// --------------------------------------------------------------------------
+// RW-3: D1 fake/local fallback
+// --------------------------------------------------------------------------
+
+describe("RW-3 D1 fake/local fallback", () => {
+  test("KV ausente + D1 presente serve /v1/health de D1, nao fixture", async () => {
+    const D1_BITHUB = fakeD1({
+      latest_health: JSON.stringify({
+        schema_version: "kv.latest_health.v1",
+        as_of: "2026-05-26T10:59:00Z",
+        generated_at: "2026-05-26T10:59:01Z",
+        overall_status: "ok",
+        sources: {
+          bybit_public: {
+            cache_hit: false,
+            degraded: false,
+            error_code: null,
+            last_event_at: "2026-05-26T10:59:00Z",
+            latency_ms: 4,
+            status: "ok",
+          },
+        },
+      }),
+    });
+    const res = await handleRequest(makeReq("/v1/health"), { D1_BITHUB });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Read-Source"), "d1");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.as_of, "2026-05-26T10:59:00Z");
+    assert.deepEqual(parsed.warnings, ["kv-absent-served-from-d1"]);
+  });
+
+  test("KV miss -> D1 fallback para /v1/health", async () => {
+    const KV_BITHUB = fakeKV({});
+    const D1_BITHUB = fakeD1({
+      latest_health: JSON.stringify({
+        schema_version: "kv.latest_health.v1",
+        as_of: "2026-05-26T11:00:00Z",
+        generated_at: "2026-05-26T11:00:02Z",
+        overall_status: "degraded",
+        sources: {
+          fred: {
+            cache_hit: false,
+            degraded: true,
+            error_code: "bad_response",
+            last_event_at: "2026-05-26T11:00:00Z",
+            latency_ms: 25,
+            status: "degraded",
+          },
+        },
+      }),
+    });
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB, D1_BITHUB });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Read-Source"), "d1");
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.health.v1");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.source, "d1");
+    assert.equal(parsed.data.overall_status, "degraded");
+    assert.deepEqual(parsed.warnings, ["kv-miss-served-from-d1"]);
+    assert.deepEqual(KV_BITHUB.calls, ["latest_health:data_layer"]);
+    assert.deepEqual(D1_BITHUB.calls, [
+      { kind: "latest_health", params: {} },
+    ]);
+  });
+
+  test("KV miss -> D1 fallback para /v1/bundles/latest", async () => {
+    const KV_BITHUB = fakeKV({});
+    const D1_BITHUB = fakeD1({
+      "latest_bundle:BTC/USDT:USDT": JSON.stringify({
+        schema_version: "kv.latest_bundle.v1",
+        as_of: "2026-05-26T11:01:00Z",
+        bundle_created_at: "2026-05-26T11:01:05Z",
+        overall_status: "ok",
+        stale: false,
+        symbol: "BTC/USDT:USDT",
+        section_statuses: {
+          market: {
+            error_code: null,
+            mandatory: true,
+            present: true,
+            source: "bybit_public",
+            stale: false,
+            status: "ok",
+          },
+        },
+        snapshot_refs: { market: "01HZXD1FAKE000000000000001" },
+        r2_bundle_key: "bundles/2026-05-26/BTC_USDT_USDT/01HZXD1FAKE000000000000001.json",
+      }),
+    });
+    const res = await handleRequest(
+      makeReq("/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT"),
+      { KV_BITHUB, D1_BITHUB }
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Read-Source"), "d1");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.source, "d1");
+    assert.equal(parsed.data.symbol, "BTC/USDT:USDT");
+    assert.deepEqual(parsed.warnings, ["kv-miss-served-from-d1"]);
+    assert.deepEqual(D1_BITHUB.calls, [
+      {
+        kind: "latest_bundle",
+        params: {
+          symbol: "BTC/USDT:USDT",
+          kvKey: "latest_bundle:BTC/USDT:USDT",
+        },
+      },
+    ]);
+  });
+
+  test("KV stale -> D1 fallback preservando warning canonico", async () => {
+    const KV_BITHUB = fakeKV({
+      "latest_health:data_layer": JSON.stringify({
+        schema_version: "kv.latest_health.v1",
+        as_of: "2026-05-26T10:00:00Z",
+        generated_at: "2026-05-26T10:00:02Z",
+        overall_status: "ok",
+        stale: true,
+        sources: {
+          bybit_public: {
+            cache_hit: true,
+            degraded: false,
+            error_code: null,
+            last_event_at: "2026-05-26T10:00:00Z",
+            latency_ms: 2,
+            status: "ok",
+          },
+        },
+      }),
+    });
+    const D1_BITHUB = fakeD1({
+      latest_health: {
+        schema_version: "read.health.v1",
+        as_of: "2026-05-26T11:02:00Z",
+        served_at: "2026-05-26T11:02:03Z",
+        source: "derived",
+        stale: false,
+        data: {
+          overall_status: "ok",
+          sources: {
+            bybit_public: {
+              cache_hit: false,
+              degraded: false,
+              error_code: null,
+              last_event_at: "2026-05-26T11:02:00Z",
+              latency_ms: 3,
+              status: "ok",
+            },
+          },
+        },
+        warnings: ["d1-rederived"],
+      },
+    });
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB, D1_BITHUB });
+    assert.equal(res.status, 200);
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.source, "d1");
+    assert.deepEqual(parsed.warnings, [
+      "d1-rederived",
+      "kv-stale-served-from-d1",
+    ]);
+  });
+
+  test("KV invalido -> D1 fallback controlado sem stack", async () => {
+    const KV_BITHUB = fakeKV({ "latest_health:data_layer": "{not-json" });
+    const D1_BITHUB = fakeD1({
+      latest_health: JSON.stringify({
+        schema_version: "kv.latest_health.v1",
+        as_of: "2026-05-26T11:03:00Z",
+        generated_at: "2026-05-26T11:03:01Z",
+        overall_status: "ok",
+        sources: {
+          bybit_public: {
+            cache_hit: false,
+            degraded: false,
+            error_code: null,
+            last_event_at: "2026-05-26T11:03:00Z",
+            latency_ms: 1,
+            status: "ok",
+          },
+        },
+      }),
+    });
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB, D1_BITHUB });
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.source, "d1");
+    assert.deepEqual(parsed.warnings, ["kv-error-served-from-d1"]);
+    assert.ok(!body.includes("SyntaxError"));
+  });
+
+  test("D1 indisponivel -> read.error.v1 503 sem stack", async () => {
+    const KV_BITHUB = fakeKV({});
+    const D1_BITHUB = fakeD1({});
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB, D1_BITHUB });
+    assert.equal(res.status, 503);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.error.v1");
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.error.code, "network_error");
+    assert.equal(parsed.error.message, "D1 fallback unavailable");
+    assert.ok(!body.includes("Error:"));
+    assert.ok(!body.includes("at getReadModel"));
   });
 });
 

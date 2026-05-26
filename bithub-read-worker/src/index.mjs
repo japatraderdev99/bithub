@@ -1,14 +1,16 @@
-// index.mjs — Read Worker offline/local para H-20260525-013 + RW-2.
+// index.mjs — Read Worker offline/local para H-20260525-013 + RW-2/RW-3.
 //
 // ESM puro, sem dependencia externa. Compativel com node:test e com a
 // API fetch do Cloudflare Workers (`export default { fetch }`).
 //
-// Regras estritas (handoffs H-013/RW-2):
+// Regras estritas (handoffs H-013/RW-2/RW-3):
 // - serve apenas as fixtures determinísticas em
 //   `bithub-read-worker/fixtures/generated/*.json`, geradas pelo script
 //   Python `bithub-data-layer/scripts/export_read_worker_fixtures.py`;
 // - quando `env.KV_BITHUB`/`env.KV` existir, tenta ler KV via get(key);
-// - sem binding KV, continua servindo exatamente os bytes das fixtures;
+// - quando `env.D1_BITHUB`/`env.DB_BITHUB` existir, tenta fallback D1
+//   fake/local via getReadModel(kind, params) para health/latest bundle;
+// - sem bindings KV/D1, continua servindo exatamente os bytes das fixtures;
 // - nao inventa payload; nao gera clock; nao gera id aleatorio;
 // - nao chama rede; nao le `.env`; nao le `process.env`; nao usa
 //   wrangler/npx/Cloudflare real;
@@ -19,7 +21,7 @@
 // - rotas desconhecidas respondem envelope read.error.v1 sem stack.
 //
 // O Worker e local-only. RW-2 prepara o formato do binding KV sem tocar
-// Cloudflare real; RW-3 adicionara fallback D1.
+// Cloudflare real; RW-3 prepara o formato do fallback D1 sem tocar D1 real.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -82,6 +84,14 @@ const KV_KEY_LATEST_HEALTH = "latest_health:data_layer";
 const KV_PREFIX_LATEST_BUNDLE = "latest_bundle:";
 
 const KV_BINDING_NAMES = Object.freeze(["KV_BITHUB", "KV"]);
+const D1_BINDING_NAMES = Object.freeze(["D1_BITHUB", "DB_BITHUB"]);
+
+const D1_FALLBACK_WARNINGS = Object.freeze({
+  kv_absent: "kv-absent-served-from-d1",
+  kv_error: "kv-error-served-from-d1",
+  kv_miss: "kv-miss-served-from-d1",
+  kv_stale: "kv-stale-served-from-d1",
+});
 
 const FORBIDDEN_RESPONSE_TOKENS = Object.freeze([
   "api_key",
@@ -195,6 +205,17 @@ function getKVBinding(env) {
   return null;
 }
 
+function getD1Binding(env) {
+  if (!env || typeof env !== "object") return null;
+  for (const name of D1_BINDING_NAMES) {
+    const candidate = env[name];
+    if (candidate && typeof candidate.getReadModel === "function") {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 async function readKVRaw(env, key) {
   const kv = getKVBinding(env);
   if (!kv) return { status: "no_binding" };
@@ -204,9 +225,17 @@ async function readKVRaw(env, key) {
   } catch (_err) {
     return { status: "error" };
   }
+  return bindingValueToRaw(value);
+}
+
+function bindingValueToRaw(value) {
   if (value === null || value === undefined) return { status: "miss" };
   if (typeof value === "string") return { status: "hit", raw: value };
-  return { status: "hit", raw: JSON.stringify(value) };
+  try {
+    return { status: "hit", raw: JSON.stringify(value) };
+  } catch (_err) {
+    return { status: "error" };
+  }
 }
 
 async function readModelFromKV({ env, key, kind, expectedSchemaVersion }) {
@@ -223,6 +252,7 @@ async function readModelFromKV({ env, key, kind, expectedSchemaVersion }) {
   }
 
   if (isReadEnvelope(parsed, expectedSchemaVersion)) {
+    if (parsed.stale) return { status: "stale", raw: kvResult.raw, parsed };
     return { status: "hit", raw: kvResult.raw, parsed };
   }
 
@@ -234,7 +264,72 @@ async function readModelFromKV({ env, key, kind, expectedSchemaVersion }) {
   if (!envelope) return { status: "invalid" };
   const raw = stableEnvelopeStringify(envelope);
   if (responseBodyHasForbiddenToken(raw)) return { status: "invalid" };
+  if (envelope.stale) return { status: "stale", raw, parsed: envelope };
   return { status: "hit", raw, parsed: envelope };
+}
+
+async function readD1Raw(env, kind, params) {
+  const d1 = getD1Binding(env);
+  if (!d1) return { status: "no_binding" };
+  let value;
+  try {
+    value = await d1.getReadModel(kind, Object.freeze({ ...params }));
+  } catch (_err) {
+    return { status: "error" };
+  }
+  return bindingValueToRaw(value);
+}
+
+async function readModelFromD1({
+  env,
+  kind,
+  params,
+  expectedSchemaVersion,
+  fallbackReason,
+}) {
+  const d1Result = await readD1Raw(env, kind, params);
+  if (d1Result.status !== "hit") return d1Result;
+  if (responseBodyHasForbiddenToken(d1Result.raw)) {
+    return { status: "invalid" };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(d1Result.raw);
+  } catch (_err) {
+    return { status: "invalid" };
+  }
+
+  const warning = D1_FALLBACK_WARNINGS[fallbackReason];
+  if (!warning) return { status: "invalid" };
+
+  let envelope;
+  if (isReadEnvelope(parsed, expectedSchemaVersion)) {
+    envelope = forceD1FallbackEnvelope(parsed, warning);
+  } else {
+    const wrapped = wrapKVReadModel({
+      model: parsed,
+      kind,
+      expectedSchemaVersion,
+    });
+    if (!wrapped) return { status: "invalid" };
+    envelope = forceD1FallbackEnvelope(wrapped, warning);
+  }
+
+  const raw = stableEnvelopeStringify(envelope);
+  if (responseBodyHasForbiddenToken(raw)) return { status: "invalid" };
+  return { status: "hit", raw, parsed: envelope };
+}
+
+function forceD1FallbackEnvelope(envelope, warning) {
+  const warnings = Array.isArray(envelope.warnings)
+    ? [...envelope.warnings]
+    : [];
+  if (!warnings.includes(warning)) warnings.push(warning);
+  return {
+    ...envelope,
+    source: "d1",
+    warnings,
+  };
 }
 
 function wrapKVReadModel({ model, kind, expectedSchemaVersion }) {
@@ -298,7 +393,9 @@ async function readRoutePayload({
   kvKey,
   kind,
   expectedSchemaVersion,
+  d1Params = {},
 }) {
+  let kvStatus = "no_binding";
   if (kvKey) {
     const kvResult = await readModelFromKV({
       env,
@@ -307,9 +404,44 @@ async function readRoutePayload({
       expectedSchemaVersion,
     });
     if (kvResult.status === "hit") return kvResult;
+    kvStatus = kvResult.status;
+
+    if (kind === "latest_health" || kind === "latest_bundle") {
+      const fallbackReason =
+        kvResult.status === "miss"
+          ? "kv_miss"
+          : kvResult.status === "stale"
+            ? "kv_stale"
+            : kvResult.status === "no_binding"
+              ? "kv_absent"
+              : "kv_error";
+      const d1Result = await readModelFromD1({
+        env,
+        kind,
+        params: d1Params,
+        expectedSchemaVersion,
+        fallbackReason,
+      });
+      if (d1Result.status === "hit") return d1Result;
+      if (kvResult.status === "invalid" || kvResult.status === "error") {
+        return { status: "error" };
+      }
+      if (d1Result.status === "invalid" || d1Result.status === "error") {
+        return { status: "d1_error" };
+      }
+      if (d1Result.status === "miss" || d1Result.status === "no_binding") {
+        if (kvResult.status !== "no_binding" || getD1Binding(env)) {
+          return { status: "d1_unavailable" };
+        }
+      }
+    }
+
     if (kvResult.status === "invalid" || kvResult.status === "error") {
       return kvResult;
     }
+  }
+  if (kvStatus === "stale" && getD1Binding(env)) {
+    return { status: "d1_unavailable" };
   }
   const fallback = fixtureResult(fixtureName);
   if (!fallback) return { status: "fixture_missing" };
@@ -476,12 +608,26 @@ async function bundlesLatestResponse({ url, origin, requestId, method, env }) {
     kvKey: `${KV_PREFIX_LATEST_BUNDLE}${rawSymbol}`,
     kind: "latest_bundle",
     expectedSchemaVersion: "read.bundle.v1",
+    d1Params: {
+      symbol: rawSymbol,
+      kvKey: `${KV_PREFIX_LATEST_BUNDLE}${rawSymbol}`,
+    },
   });
-  if (result.status === "error" || result.status === "invalid") {
+  if (result.status === "error" || result.status === "invalid" || result.status === "d1_error") {
     return errorResponse({
       status: 502,
       code: "network_error",
-      message: "KV read model unavailable",
+      message: "KV/D1 read model unavailable",
+      origin,
+      requestId,
+      method,
+    });
+  }
+  if (result.status === "d1_unavailable") {
+    return errorResponse({
+      status: 503,
+      code: "network_error",
+      message: "D1 fallback unavailable",
       origin,
       requestId,
       method,
@@ -595,11 +741,21 @@ export async function handleRequest(request, env = undefined) {
       kind: typeof route === "string" ? null : route.kind,
       expectedSchemaVersion,
     });
-    if (result.status === "error" || result.status === "invalid") {
+    if (result.status === "error" || result.status === "invalid" || result.status === "d1_error") {
       return errorResponse({
         status: 502,
         code: "network_error",
-        message: "KV read model unavailable",
+        message: "KV/D1 read model unavailable",
+        origin,
+        requestId,
+        method,
+      });
+    }
+    if (result.status === "d1_unavailable") {
+      return errorResponse({
+        status: 503,
+        code: "network_error",
+        message: "D1 fallback unavailable",
         origin,
         requestId,
         method,
@@ -656,6 +812,7 @@ export const _internals = Object.freeze({
   CORS_ALLOWED_ORIGINS,
   ROUTE_FIXTURES,
   KV_BINDING_NAMES,
+  D1_BINDING_NAMES,
   KV_KEY_PUBLIC_CONFIG,
   KV_KEY_FEATURE_FLAGS,
   KV_KEY_LATEST_HEALTH,
@@ -666,5 +823,7 @@ export const _internals = Object.freeze({
   SUPPORTED_BUNDLE_SYMBOLS,
   deterministicRequestId,
   getKVBinding,
+  getD1Binding,
   readModelFromKV,
+  readModelFromD1,
 });
