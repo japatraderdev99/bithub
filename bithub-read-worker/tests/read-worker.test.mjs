@@ -16,12 +16,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = resolve(__dirname, "..", "fixtures", "generated");
 
 const ORIGIN_APP = "https://app.bit-hub.pro";
+const ORIGIN_PAGES = "https://bithub-clo.pages.dev";
 const ORIGIN_BAD = "https://evil.example";
 const BASE = "https://api.bit-hub.pro";
 
-function makeReq(path, { method = "GET", origin } = {}) {
+function makeReq(path, { method = "GET", origin, headers: extraHeaders = {} } = {}) {
   const headers = new Headers();
   if (origin) headers.set("Origin", origin);
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
   return new Request(BASE + path, { method, headers });
 }
 
@@ -78,6 +82,7 @@ describe("module surface", () => {
     assert.ok(_internals.ROUTE_FIXTURES);
     assert.deepEqual(_internals.KV_BINDING_NAMES, ["KV_BITHUB", "KV"]);
     assert.deepEqual(_internals.D1_BINDING_NAMES, ["D1_BITHUB", "DB_BITHUB"]);
+    assert.deepEqual(_internals.EDGE_POLICY_BINDING_NAMES, ["EDGE_POLICY", "READ_EDGE_POLICY"]);
     assert.equal(_internals.KV_KEY_PUBLIC_CONFIG, "public_config");
     assert.equal(_internals.KV_KEY_FEATURE_FLAGS, "feature_flags");
     assert.equal(_internals.KV_KEY_LATEST_HEALTH, "latest_health:data_layer");
@@ -700,11 +705,149 @@ describe("CORS stub allowlist", () => {
     );
   });
 
+  test("GET com Pages production atual -> ACAO no header", async () => {
+    const res = await handleRequest(
+      makeReq("/v1/health", { origin: ORIGIN_PAGES })
+    );
+    assert.equal(
+      res.headers.get("Access-Control-Allow-Origin"),
+      ORIGIN_PAGES
+    );
+  });
+
   test("GET com Origin proibido -> sem header CORS", async () => {
     const res = await handleRequest(
       makeReq("/v1/health", { origin: ORIGIN_BAD })
     );
     assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+  });
+});
+
+// --------------------------------------------------------------------------
+// RW-7: edge policy fake/local
+// --------------------------------------------------------------------------
+
+describe("RW-7 edge policy fake/local", () => {
+  test("EDGE_POLICY.checkAccess missing -> 401 read.error.v1 sem ecoar header", async () => {
+    const EDGE_POLICY = {
+      checkAccess() {
+        return { action: "missing" };
+      },
+    };
+    const res = await handleRequest(
+      makeReq("/v1/health", {
+        headers: {
+          "Cf-Access-Jwt-Assertion": "Bearer SECRET.JWT.VALUE",
+        },
+      }),
+      { EDGE_POLICY }
+    );
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.error.v1");
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.error.code, "auth_error");
+    assert.equal(parsed.error.message, "access credential missing");
+    assert.ok(!body.includes("SECRET.JWT.VALUE"));
+    assert.ok(!body.includes("Cf-Access-Jwt-Assertion"));
+  });
+
+  test("READ_EDGE_POLICY.checkAccess denied -> 403 read.error.v1", async () => {
+    const READ_EDGE_POLICY = {
+      checkAccess() {
+        return { action: "denied" };
+      },
+    };
+    const res = await handleRequest(makeReq("/v1/health"), { READ_EDGE_POLICY });
+    assert.equal(res.status, 403);
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.error.code, "auth_error");
+    assert.equal(parsed.error.message, "access denied");
+  });
+
+  test("EDGE_POLICY.checkRateLimit limited -> 429 com Retry-After", async () => {
+    const EDGE_POLICY = {
+      checkAccess() {
+        return { action: "allow" };
+      },
+      checkRateLimit() {
+        return { action: "limited", retryAfterSeconds: 17 };
+      },
+    };
+    const res = await handleRequest(makeReq("/v1/health"), { EDGE_POLICY });
+    assert.equal(res.status, 429);
+    assert.equal(res.headers.get("Retry-After"), "17");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.error.code, "rate_limited");
+    assert.equal(parsed.error.message, "rate limit exceeded");
+  });
+
+  test("EDGE_POLICY allow -> request segue comportamento normal", async () => {
+    const EDGE_POLICY = {
+      checkAccess(context) {
+        assert.equal(context.path, "/v1/health");
+        assert.equal(context.url, "/v1/health");
+        return { action: "allow" };
+      },
+      checkRateLimit() {
+        return { action: "allow" };
+      },
+    };
+    const res = await handleRequest(makeReq("/v1/health"), { EDGE_POLICY });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), loadFixture("health.json"));
+  });
+
+  test("EDGE_POLICY.log recebe evento sanitizado e deterministico", async () => {
+    const events = [];
+    const EDGE_POLICY = {
+      log(event) {
+        events.push(event);
+      },
+    };
+    const res = await handleRequest(
+      makeReq("/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT&token=BearerSecret", {
+        headers: {
+          Authorization: "Bearer SHOULD_NOT_LOG",
+          Cookie: "session=SHOULD_NOT_LOG",
+        },
+      }),
+      { EDGE_POLICY }
+    );
+    assert.equal(res.status, 200);
+    assert.equal(events.length, 1);
+    assert.deepEqual(events[0], {
+      at: "2026-05-25T14:00:15Z",
+      duration_ms: 0,
+      method: "GET",
+      path: "/v1/bundles/latest?<2 keys>",
+      request_id: "01HZX-SKEL-1B58DD73",
+      schema_version: "read.bundle.v1",
+      source: "kv",
+      status: 200,
+    });
+    const raw = JSON.stringify(events[0]);
+    for (const forbidden of [
+      "BTC%2FUSDT",
+      "BearerSecret",
+      "SHOULD_NOT_LOG",
+      "Authorization",
+      "Cookie",
+    ]) {
+      assert.ok(!raw.includes(forbidden), `log leaked ${forbidden}`);
+    }
+  });
+
+  test("sanitizeUrlForLog conta chaves sem valores", () => {
+    assert.equal(
+      _internals.sanitizeUrlForLog("https://api.bit-hub.pro/v1/health"),
+      "/v1/health"
+    );
+    assert.equal(
+      _internals.sanitizeUrlForLog("https://api.bit-hub.pro/v1/x?a=secret&a=other&b=2#frag"),
+      "/v1/x?<2 keys>"
+    );
+    assert.equal(_internals.sanitizeUrlForLog("not a url"), "/");
   });
 });
 

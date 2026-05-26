@@ -1,9 +1,9 @@
-// index.mjs — Read Worker offline/local para H-20260525-013 + RW-2/RW-3.
+// index.mjs — Read Worker offline/local para H-20260525-013 + RW-2/RW-3/RW-7.
 //
 // ESM puro, sem dependencia externa. Compativel com node:test e com a
 // API fetch do Cloudflare Workers (`export default { fetch }`).
 //
-// Regras estritas (handoffs H-013/RW-2/RW-3):
+// Regras estritas (handoffs H-013/RW-2/RW-3/RW-7):
 // - serve apenas as fixtures determinísticas em
 //   `bithub-read-worker/fixtures/generated/*.json`, geradas pelo script
 //   Python `bithub-data-layer/scripts/export_read_worker_fixtures.py`;
@@ -18,10 +18,12 @@
 // - /v1/blobs/bundle/* e /v1/blobs/manifest/* respondem 503 com warning
 //   literal "blobs not available in skeleton";
 // - metodos diferentes de GET/HEAD respondem 405;
+// - RW-7 permite edge policy fake/local injetavel, sem Access/WAF real;
 // - rotas desconhecidas respondem envelope read.error.v1 sem stack.
 //
 // O Worker e local-only. RW-2 prepara o formato do binding KV sem tocar
-// Cloudflare real; RW-3 prepara o formato do fallback D1 sem tocar D1 real.
+// Cloudflare real; RW-3 prepara o formato do fallback D1 sem tocar D1 real;
+// RW-7 prepara contrato de borda sem tocar Access/WAF/Logpush reais.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -35,6 +37,7 @@ const FIXTURES_DIR = resolve(__dirname, "..", "fixtures", "generated");
 // --------------------------------------------------------------------------
 
 const CORS_ALLOWED_ORIGINS = new Set([
+  "https://bithub-clo.pages.dev",
   "https://app.bit-hub.pro",
   "https://api.bit-hub.pro",
   "http://localhost:3000",
@@ -85,6 +88,7 @@ const KV_PREFIX_LATEST_BUNDLE = "latest_bundle:";
 
 const KV_BINDING_NAMES = Object.freeze(["KV_BITHUB", "KV"]);
 const D1_BINDING_NAMES = Object.freeze(["D1_BITHUB", "DB_BITHUB"]);
+const EDGE_POLICY_BINDING_NAMES = Object.freeze(["EDGE_POLICY", "READ_EDGE_POLICY"]);
 
 const D1_FALLBACK_WARNINGS = Object.freeze({
   kv_absent: "kv-absent-served-from-d1",
@@ -213,6 +217,156 @@ function getD1Binding(env) {
       return candidate;
     }
   }
+  return null;
+}
+
+function getEdgePolicyBinding(env) {
+  if (!env || typeof env !== "object") return null;
+  for (const name of EDGE_POLICY_BINDING_NAMES) {
+    const candidate = env[name];
+    if (candidate && typeof candidate === "object") return candidate;
+  }
+  return null;
+}
+
+function sanitizeUrlForLog(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (_err) {
+    return "/";
+  }
+  const keys = new Set();
+  for (const key of parsed.searchParams.keys()) {
+    keys.add(key);
+  }
+  if (keys.size === 0) return parsed.pathname || "/";
+  return `${parsed.pathname || "/"}?<${keys.size} key${keys.size === 1 ? "" : "s"}>`;
+}
+
+function buildEdgeLogEvent({
+  method,
+  rawUrl,
+  status,
+  source,
+  schemaVersion,
+  requestId,
+  durationMs = 0,
+}) {
+  return Object.freeze({
+    at: "2026-05-25T14:00:15Z",
+    duration_ms: Number.isFinite(durationMs) ? Math.max(0, Math.floor(durationMs)) : 0,
+    method,
+    path: sanitizeUrlForLog(rawUrl),
+    request_id: requestId,
+    schema_version: schemaVersion || null,
+    source: source || null,
+    status,
+  });
+}
+
+function emitEdgeLog(env, event) {
+  const edgePolicy = getEdgePolicyBinding(env);
+  if (!edgePolicy || typeof edgePolicy.log !== "function") return;
+  try {
+    edgePolicy.log(event);
+  } catch (_err) {
+    // Local logging is best-effort; it must never change read behavior.
+  }
+}
+
+function normalizeEdgeDecision(value) {
+  if (value === undefined || value === null || value === true) return { action: "allow" };
+  if (value === false) return { action: "deny" };
+  if (typeof value === "string") return { action: value };
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return {
+      action: value.action || value.status || "allow",
+      retryAfterSeconds: value.retry_after_seconds || value.retryAfterSeconds,
+    };
+  }
+  return { action: "deny" };
+}
+
+function retryAfterHeader(value) {
+  if (value === undefined || value === null) return "60";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 1 || numeric > 3600) return "60";
+  return String(Math.floor(numeric));
+}
+
+async function edgePolicyRejection({ env, request, url, origin, method, requestId }) {
+  const edgePolicy = getEdgePolicyBinding(env);
+  if (!edgePolicy) return null;
+
+  const context = Object.freeze({
+    method,
+    origin,
+    path: url.pathname,
+    request_id: requestId,
+    url: sanitizeUrlForLog(request.url),
+  });
+
+  if (typeof edgePolicy.checkAccess === "function") {
+    let decision;
+    try {
+      decision = normalizeEdgeDecision(await edgePolicy.checkAccess(context));
+    } catch (_err) {
+      decision = { action: "deny" };
+    }
+    if (decision.action === "missing") {
+      return errorResponse({
+        status: 401,
+        code: "auth_error",
+        message: "access credential missing",
+        origin,
+        requestId,
+        method,
+      });
+    }
+    if (decision.action !== "allow") {
+      return errorResponse({
+        status: 403,
+        code: "auth_error",
+        message: "access denied",
+        origin,
+        requestId,
+        method,
+      });
+    }
+  }
+
+  if (typeof edgePolicy.checkRateLimit === "function") {
+    let decision;
+    try {
+      decision = normalizeEdgeDecision(await edgePolicy.checkRateLimit(context));
+    } catch (_err) {
+      decision = { action: "limited" };
+    }
+    if (decision.action === "limited" || decision.action === "rate_limited") {
+      return errorResponse({
+        status: 429,
+        code: "rate_limited",
+        message: "rate limit exceeded",
+        origin,
+        requestId,
+        method,
+        extraHeaders: { "Retry-After": retryAfterHeader(decision.retryAfterSeconds) },
+      });
+    }
+    if (decision.action !== "allow") {
+      return errorResponse({
+        status: 429,
+        code: "rate_limited",
+        message: "rate limit exceeded",
+        origin,
+        requestId,
+        method,
+        extraHeaders: { "Retry-After": "60" },
+      });
+    }
+  }
+
   return null;
 }
 
@@ -688,6 +842,17 @@ export async function handleRequest(request, env = undefined) {
   const path = url.pathname;
   const method = request.method.toUpperCase();
   const requestId = deterministicRequestId(path);
+  const respond = (response) => {
+    emitEdgeLog(env, buildEdgeLogEvent({
+      method,
+      rawUrl: request.url,
+      requestId,
+      schemaVersion: response.headers.get("X-Bithub-Schema-Version"),
+      source: response.headers.get("X-Bithub-Read-Source"),
+      status: response.status,
+    }));
+    return response;
+  };
 
   // OPTIONS preflight
   if (method === "OPTIONS") {
@@ -699,13 +864,20 @@ export async function handleRequest(request, env = undefined) {
       headers.set("Access-Control-Allow-Credentials", "true");
       headers.set("Access-Control-Max-Age", CORS_MAX_AGE);
       headers.set("Vary", "Origin, Cookie, Cf-Access-Jwt-Assertion");
-      return new Response(null, { status: 204, headers });
+      return respond(new Response(null, { status: 204, headers }));
     }
-    return new Response(null, { status: 403 });
+    return respond(errorResponse({
+      status: 403,
+      code: "validation_error",
+      message: "origin not allowed",
+      origin,
+      requestId,
+      method,
+    }));
   }
 
   if (!isMethodAllowed(method)) {
-    return errorResponse({
+    return respond(errorResponse({
       status: 405,
       code: "validation_error",
       message: "method not allowed; this read-worker accepts GET/HEAD only",
@@ -713,7 +885,19 @@ export async function handleRequest(request, env = undefined) {
       requestId,
       method,
       extraHeaders: { Allow: "GET, HEAD, OPTIONS" },
-    });
+    }));
+  }
+
+  const edgeRejection = await edgePolicyRejection({
+    env,
+    request,
+    url,
+    origin,
+    method,
+    requestId,
+  });
+  if (edgeRejection) {
+    return respond(edgeRejection);
   }
 
   // /v1/blobs/* (stub 503)
@@ -721,12 +905,12 @@ export async function handleRequest(request, env = undefined) {
     path.startsWith(BLOB_BUNDLE_PREFIX) ||
     path.startsWith(BLOB_MANIFEST_PREFIX)
   ) {
-    return blobNotAvailableResponse({ origin, requestId, method });
+    return respond(blobNotAvailableResponse({ origin, requestId, method }));
   }
 
   // /v1/bundles/latest
   if (path === BUNDLES_LATEST_PATH) {
-    return bundlesLatestResponse({ url, origin, requestId, method, env });
+    return respond(await bundlesLatestResponse({ url, origin, requestId, method, env }));
   }
 
   // Endpoints simples por mapa
@@ -742,36 +926,36 @@ export async function handleRequest(request, env = undefined) {
       expectedSchemaVersion,
     });
     if (result.status === "error" || result.status === "invalid" || result.status === "d1_error") {
-      return errorResponse({
+      return respond(errorResponse({
         status: 502,
         code: "network_error",
         message: "KV/D1 read model unavailable",
         origin,
         requestId,
         method,
-      });
+      }));
     }
     if (result.status === "d1_unavailable") {
-      return errorResponse({
+      return respond(errorResponse({
         status: 503,
         code: "network_error",
         message: "D1 fallback unavailable",
         origin,
         requestId,
         method,
-      });
+      }));
     }
     if (result.status === "fixture_missing") {
-      return errorResponse({
+      return respond(errorResponse({
         status: 500,
         code: "unknown_error",
         message: "skeleton fixture missing for route",
         origin,
         requestId,
         method,
-      });
+      }));
     }
-    return jsonResponse({
+    return respond(jsonResponse({
       body: result.raw,
       status: 200,
       schemaVersion: result.parsed.schema_version,
@@ -780,18 +964,18 @@ export async function handleRequest(request, env = undefined) {
       requestId,
       cacheControl: "private, max-age=30",
       method,
-    });
+    }));
   }
 
   // Unknown route -> envelope de erro 404 sem stack/segredo.
-  return errorResponse({
+  return respond(errorResponse({
     status: 404,
     code: "not_found",
     message: "route not found in read-worker skeleton",
     origin,
     requestId,
     method,
-  });
+  }));
 }
 
 // Compat com Cloudflare Workers (apesar de o skeleton nao rodar la).
@@ -813,6 +997,7 @@ export const _internals = Object.freeze({
   ROUTE_FIXTURES,
   KV_BINDING_NAMES,
   D1_BINDING_NAMES,
+  EDGE_POLICY_BINDING_NAMES,
   KV_KEY_PUBLIC_CONFIG,
   KV_KEY_FEATURE_FLAGS,
   KV_KEY_LATEST_HEALTH,
@@ -824,6 +1009,10 @@ export const _internals = Object.freeze({
   deterministicRequestId,
   getKVBinding,
   getD1Binding,
+  getEdgePolicyBinding,
   readModelFromKV,
   readModelFromD1,
+  sanitizeUrlForLog,
+  buildEdgeLogEvent,
+  edgePolicyRejection,
 });

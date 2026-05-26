@@ -1,11 +1,11 @@
-# bithub-read-worker — Skeleton + KV/D1 local (H-013/RW-2/RW-3)
+# bithub-read-worker — Skeleton + KV/D1/edge local (H-013/RW-2/RW-3/RW-7)
 
 Worker de leitura **offline/local** que serve os envelopes canônicos
 `/v1/*` definidos em
 [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
 (R-20260525-001) a partir de fixtures determinísticas geradas pelo
-`bithub-data-layer`, de um binding KV fake/local injetado em teste ou,
-no escopo RW-3, de um fallback D1 fake/local injetado em teste.
+`bithub-data-layer`, de bindings KV/D1 fake/local injetados em teste ou,
+no escopo RW-7, de uma edge policy fake/local injetada em teste.
 
 Este skeleton **não é o Worker de produção**. É a ponte segura entre o
 backend e a UI prevista em
@@ -21,8 +21,8 @@ alteração contratual.
 |---|---|---|
 | Runtime | Node 22+ (node:test) | Cloudflare Workers |
 | Dados | Fixtures JSON em disco + KV/D1 fake injetável | KV + D1 + R2 + presigned |
-| Auth | _stub_ (nenhuma validação) | Cloudflare Access JWT |
-| CORS | Allowlist hard-coded | Cloudflare Access |
+| Auth | Edge policy fake/local opcional | Cloudflare Access JWT |
+| CORS | Allowlist hard-coded testada | Cloudflare Access / Worker |
 | Clock | Constantes determinísticas | `Date.now()` |
 | IDs | `01HZX-SKEL-<hash>` por path | ULID/UUIDv7 por request |
 | Deploy | **Nenhum** | `wrangler deploy` |
@@ -40,8 +40,8 @@ alteração contratual.
   seção 11.3). `/v1/blobs/*` responde `503` com o warning literal
   `"blobs not available in skeleton"`.
 - TypeScript compilado, dependência externa, framework HTTP.
-- Validação JWT do Cloudflare Access (a auth real entra em RW-7).
-- Rate limit (entra em RW-7 via WAF / Cloudflare).
+- Validação JWT real do Cloudflare Access.
+- Rate limit real via WAF/Cloudflare.
 - Webhook, mutação, escrita, ordem, posição, wallet, sinal, score,
   recommendation, direction, regime.
 
@@ -57,9 +57,11 @@ alteração contratual.
 | `/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT` | GET, HEAD | `read.bundle.v1` | 200 |
 | `/v1/blobs/bundle/{id}` | GET, HEAD | `read.blob.v1` | 503 (warning literal) |
 | `/v1/blobs/manifest/{id}` | GET, HEAD | `read.blob.v1` | 503 (warning literal) |
+| Access fake negado/ausente | GET, HEAD | `read.error.v1` | 401 / 403 |
+| Rate-limit fake | GET, HEAD | `read.error.v1` | 429 (`Retry-After`) |
 | Métodos não permitidos | POST/PUT/PATCH/DELETE | `read.error.v1` | 405 (`Allow: GET, HEAD, OPTIONS`) |
 | Rotas desconhecidas | qualquer | `read.error.v1` | 404 |
-| Preflight | OPTIONS | — | 204 com CORS / 403 sem origem |
+| Preflight | OPTIONS | — / `read.error.v1` | 204 com CORS / 403 sem origem |
 
 Todo response 2xx carrega o envelope canônico
 ([`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
@@ -87,6 +89,7 @@ Headers comuns:
 
 CORS allowlist hard-coded (R-001 seção 8):
 
+- `https://bithub-clo.pages.dev` (Pages production atual)
 - `https://app.bit-hub.pro` (produção)
 - `https://api.bit-hub.pro` (mesmo zone)
 - `http://localhost:3000`
@@ -167,6 +170,53 @@ Query contract futuro, ainda sem SQL no runtime local:
 
 RW-3 continua sem `wrangler`, sem D1 real, sem `.env`, sem rede e sem
 escrita em D1.
+
+## RW-7: edge policy fake/local
+
+RW-7 adiciona uma interface mínima de política de borda fake/local. O
+binding canônico é `env.EDGE_POLICY`; `env.READ_EDGE_POLICY` também é
+aceito para ergonomia local.
+
+Interface do stub:
+
+```javascript
+const EDGE_POLICY = {
+  async checkAccess(context) {
+    // context: { method, origin, path, request_id, url }
+    return { action: "allow" }; // "missing" -> 401, outros deny -> 403
+  },
+  async checkRateLimit(context) {
+    return { action: "allow" }; // "limited" -> 429
+  },
+  log(event) {
+    // event nao contem query raw, headers, cookies, IP, UA ou payload.
+  }
+};
+```
+
+Contrato local:
+
+| Situação | Resultado |
+|---|---|
+| Sem `EDGE_POLICY` | comportamento H-013/RW-2/RW-3 intacto |
+| `checkAccess()` -> `missing` | `read.error.v1` status `401`, `auth_error` |
+| `checkAccess()` -> deny | `read.error.v1` status `403`, `auth_error` |
+| `checkRateLimit()` -> `limited` | `read.error.v1` status `429`, `rate_limited`, `Retry-After` |
+| `log(event)` | recebe evento determinístico e sanitizado |
+
+Campos permitidos no log local:
+
+- `at`, `duration_ms`, `method`, `path`, `request_id`,
+  `schema_version`, `source`, `status`.
+
+Campos proibidos no log local:
+
+- query string crua, valores de query, `Authorization`, `Bearer`,
+  `Cookie`, `Cf-Access-Jwt-Assertion`, payload raw, IP, user-agent,
+  token, segredo ou PII.
+
+RW-7 continua sem validar JWT real, sem Cloudflare Access real, sem WAF,
+sem Logpush, sem `.env`, sem rede, sem `wrangler` e sem deploy.
 
 ## Como rodar
 
@@ -310,15 +360,15 @@ seção 15:
    skeleton.
 3. **RW-2** — bindings KV fake/local injetáveis; `/v1/health`,
    `/v1/config/*` e `/v1/bundles/latest` tentam KV antes das fixtures.
-4. **RW-3 (este)** — D1 fake/local para `/v1/health` e
+4. **RW-3** — D1 fake/local para `/v1/health` e
    `/v1/bundles/latest` quando KV estiver ausente, miss, stale ou
    inválido.
 5. **RW-4** — `/v1/symbols`, `/v1/source-status`, `/v1/snapshots/{id}`
    contra D1.
 6. **RW-5** — `/v1/audit?run_id=...`, `/v1/bundles/{bundle_id}`.
 7. **RW-6** — `/v1/blobs/*` com R2 presigned (depende de R-B3).
-8. **RW-7** — Cloudflare Access JWT validation + CORS final + rate limit
-   + Logpush.
+8. **RW-7 (este)** — edge policy fake/local para CORS, Access semantics,
+   rate-limit semantics e logs sanitizados.
 9. **RW-8** — Kill-switch via `feature_flags.read_worker_enabled`.
 
 Nenhuma dessas etapas está autorizada por H-013. Cada uma precisa de
