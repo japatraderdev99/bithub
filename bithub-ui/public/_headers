@@ -1,0 +1,29 @@
+# Cloudflare Pages — static HTTP headers
+#
+# Applies to every path served from `bithub-ui/public/`. This file pairs
+# the two headers the local dev-server already emits on static responses
+# (X-Content-Type-Options: nosniff and Referrer-Policy: no-referrer)
+# with three Pages-only hardening extras that the local dev-server does
+# NOT currently emit:
+#
+#   - Permissions-Policy (deny-everything for browser features the
+#     dashboard never uses)
+#   - X-Frame-Options: DENY (clickjacking defense)
+#   - Cross-Origin-Opener-Policy: same-origin (document isolation)
+#
+# The Pages extras are baseline hardening for the public deployment;
+# they are not yet reflected in the local dev-server because UI-1 was
+# scoped to feature parity, not perimeter hardening.
+#
+# No CSP yet: ESM `import` graph plus the hash router would need explicit
+# `script-src` and `connect-src` policies validated against the Read
+# Worker origin, and a CSP misstep silently breaks the dashboard. CSP
+# enters together with the real Worker URL when that operational task
+# lands.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin

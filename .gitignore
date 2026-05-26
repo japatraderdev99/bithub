@@ -1,4 +1,25 @@
+# Secrets and environment
 .env
 .env.*
 !.env.example
+
+# OS junk
 .DS_Store
+
+# Private local trees (not part of public repo)
+bithub-vault/
+bithub-data-layer/
+Front end/
+financial-services-main/
+freqtrade-develop/
+
+# Local tooling caches
+.claude/
+
+# Build / install artifacts (none expected in zero-dep UI-1, defensive)
+node_modules/
+.wrangler/
+.next/
+dist/
+coverage/
+__pycache__/

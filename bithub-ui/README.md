@@ -167,6 +167,29 @@ Esperado (UI-1 + UI-2A polish):
 
 Total: **71 testes UI Node** + **14 smoke**.
 
+## Cloudflare Pages static settings
+
+Quando o repo for conectado a Cloudflare Pages como site static (handoff
+`H-20260526-PAGES-STATIC-PREP`), as configuracoes sao:
+
+| Setting | Value |
+|---|---|
+| Production branch | `main` |
+| Preview branches | `preview/*` |
+| Build command | *(vazio)* |
+| Build output directory | `bithub-ui/public` |
+| Root directory | *(vazio / project root)* |
+| Environment variables | *(nenhuma — frontend e zero-secret)* |
+
+Cloudflare Pages serve `bithub-ui/public/` verbatim. Sem build. Sem
+`wrangler`, sem `npx`, sem `npm install`. Headers HTTP estaticos vem do
+arquivo `bithub-ui/public/_headers` (X-Content-Type-Options, Referrer-
+Policy, Permissions-Policy restritiva, X-Frame-Options, COOP). CSP fica
+para H-014/RW-7 quando o origin do Worker real estiver definido.
+
+`bithub-read-worker/` continua sendo skeleton **local** para dev/test;
+nao e deploy de Worker Cloudflare. Worker real entra em H-014.
+
 ## Headers e contrato
 
 Em respostas 2xx do `/v1/*`, o dev-server propaga os headers que o
