@@ -1,10 +1,11 @@
-# bithub-read-worker — Skeleton (H-20260525-013)
+# bithub-read-worker — Skeleton + KV local (H-013/RW-2)
 
-Worker de leitura **offline-only** que serve os envelopes canônicos
+Worker de leitura **offline/local** que serve os envelopes canônicos
 `/v1/*` definidos em
 [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
 (R-20260525-001) a partir de fixtures determinísticas geradas pelo
-`bithub-data-layer`.
+`bithub-data-layer` ou, no escopo RW-2, de um binding KV fake/local
+injetado em teste.
 
 Este skeleton **não é o Worker de produção**. É a ponte segura entre o
 backend e a UI prevista em
@@ -19,7 +20,7 @@ funcionando sem alteração contratual.
 | Item | Skeleton | Worker real (futuro) |
 |---|---|---|
 | Runtime | Node 22+ (node:test) | Cloudflare Workers |
-| Dados | Fixtures JSON em disco | KV + D1 + R2 + presigned |
+| Dados | Fixtures JSON em disco + KV fake injetável | KV + D1 + R2 + presigned |
 | Auth | _stub_ (nenhuma validação) | Cloudflare Access JWT |
 | CORS | Allowlist hard-coded | Cloudflare Access |
 | Clock | Constantes determinísticas | `Date.now()` |
@@ -91,6 +92,34 @@ CORS allowlist hard-coded (R-001 seção 8):
 - `http://localhost:3000`
 - `http://127.0.0.1:3000`
 
+## RW-2: KV fake/local
+
+RW-2 adiciona uma interface mínima de leitura KV: um objeto injetável
+com método `get(key)`. O binding canônico é `env.KV_BITHUB`; `env.KV`
+também é aceito apenas para ergonomia local. Sem binding, o Worker cai
+para as fixtures e preserva exatamente os bytes do skeleton H-013.
+
+Chaves lidas em RW-2:
+
+| Rota | Chave KV | Fallback |
+|---|---|---|
+| `/v1/config/public` | `public_config` | `fixtures/generated/public-config.json` |
+| `/v1/config/feature-flags` | `feature_flags` | `fixtures/generated/feature-flags.json` |
+| `/v1/health` | `latest_health:data_layer` | `fixtures/generated/health.json` |
+| `/v1/bundles/latest?symbol=...` | `latest_bundle:{symbol}` | fixture do símbolo allowlisted |
+
+Valores KV podem ser envelopes `read.*.v1` completos ou read-models
+compactos H-010:
+
+- `kv.latest_health.v1` vira envelope `read.health.v1`;
+- `kv.latest_bundle.v1` vira envelope `read.bundle.v1`;
+- `public_config` e `feature_flags` podem ser dicts públicos compactos.
+
+O Worker continua sem `wrangler`, sem namespace real, sem `.env`, sem
+rede e sem escrita em KV. KV miss em ambiente local cai para fixture;
+JSON inválido, erro de `get()` ou token proibido no payload falha
+fechado com `read.error.v1` status `502`, sem stack.
+
 ## Como rodar
 
 ### 1. Gerar fixtures canônicas (Python stdlib)
@@ -128,6 +157,28 @@ import { handleRequest } from "./src/index.mjs";
 
 const res = await handleRequest(
   new Request("https://api.bit-hub.pro/v1/health")
+);
+console.log(res.status, await res.text());
+```
+
+Exemplo com KV fake:
+
+```javascript
+import { handleRequest } from "./src/index.mjs";
+
+const KV_BITHUB = {
+  async get(key) {
+    if (key !== "feature_flags") return null;
+    return JSON.stringify({
+      read_worker_enabled: true,
+      show_audit_panel: false
+    });
+  }
+};
+
+const res = await handleRequest(
+  new Request("https://api.bit-hub.pro/v1/config/feature-flags"),
+  { KV_BITHUB }
 );
 console.log(res.status, await res.text());
 ```
@@ -180,11 +231,11 @@ Sub-handoffs propostos em
 [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
 seção 15:
 
-1. **H-013/RW-1 (este)** — skeleton local com fixtures.
-2. **UI-1** (Codex precisa emitir) — frontend shell consumindo este
+1. **H-013/RW-1** — skeleton local com fixtures.
+2. **UI-1** — frontend shell consumindo este
    skeleton.
-3. **RW-2** — TS Worker real + bindings KV; `/v1/health`, `/v1/config/*`
-   passam a ler KV.
+3. **RW-2 (este)** — bindings KV fake/local injetáveis; `/v1/health`,
+   `/v1/config/*` e `/v1/bundles/latest` tentam KV antes das fixtures.
 4. **RW-3** — D1 fallback + `/v1/bundles/latest` lendo D1 quando KV
    miss/stale.
 5. **RW-4** — `/v1/symbols`, `/v1/source-status`, `/v1/snapshots/{id}`

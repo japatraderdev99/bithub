@@ -1,12 +1,14 @@
-// index.mjs — Read Worker skeleton (offline) para H-20260525-013.
+// index.mjs — Read Worker offline/local para H-20260525-013 + RW-2.
 //
 // ESM puro, sem dependencia externa. Compativel com node:test e com a
 // API fetch do Cloudflare Workers (`export default { fetch }`).
 //
-// Regras estritas (handoff H-013):
+// Regras estritas (handoffs H-013/RW-2):
 // - serve apenas as fixtures determinísticas em
 //   `bithub-read-worker/fixtures/generated/*.json`, geradas pelo script
 //   Python `bithub-data-layer/scripts/export_read_worker_fixtures.py`;
+// - quando `env.KV_BITHUB`/`env.KV` existir, tenta ler KV via get(key);
+// - sem binding KV, continua servindo exatamente os bytes das fixtures;
 // - nao inventa payload; nao gera clock; nao gera id aleatorio;
 // - nao chama rede; nao le `.env`; nao le `process.env`; nao usa
 //   wrangler/npx/Cloudflare real;
@@ -16,8 +18,8 @@
 // - metodos diferentes de GET/HEAD respondem 405;
 // - rotas desconhecidas respondem envelope read.error.v1 sem stack.
 //
-// O Worker e local-only. Em runtime real (RW-2/RW-3 futuros) substituira
-// `loadFixtures()` por bindings KV/D1/R2.
+// O Worker e local-only. RW-2 prepara o formato do binding KV sem tocar
+// Cloudflare real; RW-3 adicionara fallback D1.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -71,15 +73,55 @@ function loadFixtures() {
 const FIXTURES = loadFixtures();
 
 // --------------------------------------------------------------------------
+// Chaves KV Phase 0 (H-010). Binding canonico: env.KV_BITHUB.
+// --------------------------------------------------------------------------
+
+const KV_KEY_PUBLIC_CONFIG = "public_config";
+const KV_KEY_FEATURE_FLAGS = "feature_flags";
+const KV_KEY_LATEST_HEALTH = "latest_health:data_layer";
+const KV_PREFIX_LATEST_BUNDLE = "latest_bundle:";
+
+const KV_BINDING_NAMES = Object.freeze(["KV_BITHUB", "KV"]);
+
+const FORBIDDEN_RESPONSE_TOKENS = Object.freeze([
+  "api_key",
+  "apikey",
+  ["Bearer", ""].join(" "),
+  "Authorization",
+  ["X", "API", "Key"].join("-"),
+  ["X", "BAPI", "API", "KEY"].join("-"),
+  ["BYBIT", "PRIVATE"].join("_"),
+  ["FRED", "API", "KEY"].join("_"),
+  ["WEBHOOK", "SIGNING", "SECRET"].join("_"),
+  "private_key",
+  "signing_secret",
+  "access_token",
+  "refresh_token",
+  "password",
+]);
+
+// --------------------------------------------------------------------------
 // Mapa rota -> fixture
 // --------------------------------------------------------------------------
 
 const ROUTE_FIXTURES = Object.freeze({
-  "/v1/health": "health.json",
+  "/v1/health": {
+    fixture: "health.json",
+    kvKey: KV_KEY_LATEST_HEALTH,
+    kind: "latest_health",
+  },
   "/v1/symbols": "symbols.json",
   "/v1/source-status": "source-status.json",
-  "/v1/config/public": "public-config.json",
-  "/v1/config/feature-flags": "feature-flags.json",
+  "/v1/config/public": {
+    fixture: "public-config.json",
+    kvKey: KV_KEY_PUBLIC_CONFIG,
+    kind: "public_config",
+  },
+  "/v1/config/feature-flags": {
+    fixture: "feature-flags.json",
+    kvKey: KV_KEY_FEATURE_FLAGS,
+    kind: "feature_flags",
+  },
 });
 
 const BUNDLES_LATEST_PATH = "/v1/bundles/latest";
@@ -107,6 +149,171 @@ function deterministicRequestId(path) {
   }
   const hex = h.toString(16).padStart(8, "0").toUpperCase();
   return `01HZX-SKEL-${hex}`;
+}
+
+function stableEnvelopeStringify(envelope) {
+  const ordered = {
+    as_of: envelope.as_of,
+    data: envelope.data,
+    schema_version: envelope.schema_version,
+    served_at: envelope.served_at,
+    source: envelope.source,
+    stale: envelope.stale,
+    warnings: envelope.warnings,
+  };
+  return JSON.stringify(ordered);
+}
+
+function responseBodyHasForbiddenToken(raw) {
+  if (typeof raw !== "string") return true;
+  const lower = raw.toLowerCase();
+  return FORBIDDEN_RESPONSE_TOKENS.some((tok) => {
+    const needle = tok.toLowerCase();
+    return lower.includes(needle);
+  });
+}
+
+function isReadEnvelope(value, expectedSchemaVersion) {
+  return value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && value.schema_version === expectedSchemaVersion
+    && typeof value.as_of === "string"
+    && typeof value.served_at === "string"
+    && typeof value.source === "string"
+    && typeof value.stale === "boolean"
+    && "data" in value
+    && Array.isArray(value.warnings);
+}
+
+function getKVBinding(env) {
+  if (!env || typeof env !== "object") return null;
+  for (const name of KV_BINDING_NAMES) {
+    const candidate = env[name];
+    if (candidate && typeof candidate.get === "function") return candidate;
+  }
+  return null;
+}
+
+async function readKVRaw(env, key) {
+  const kv = getKVBinding(env);
+  if (!kv) return { status: "no_binding" };
+  let value;
+  try {
+    value = await kv.get(key);
+  } catch (_err) {
+    return { status: "error" };
+  }
+  if (value === null || value === undefined) return { status: "miss" };
+  if (typeof value === "string") return { status: "hit", raw: value };
+  return { status: "hit", raw: JSON.stringify(value) };
+}
+
+async function readModelFromKV({ env, key, kind, expectedSchemaVersion }) {
+  const kvResult = await readKVRaw(env, key);
+  if (kvResult.status !== "hit") return kvResult;
+  if (responseBodyHasForbiddenToken(kvResult.raw)) {
+    return { status: "invalid" };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(kvResult.raw);
+  } catch (_err) {
+    return { status: "invalid" };
+  }
+
+  if (isReadEnvelope(parsed, expectedSchemaVersion)) {
+    return { status: "hit", raw: kvResult.raw, parsed };
+  }
+
+  const envelope = wrapKVReadModel({
+    model: parsed,
+    kind,
+    expectedSchemaVersion,
+  });
+  if (!envelope) return { status: "invalid" };
+  const raw = stableEnvelopeStringify(envelope);
+  if (responseBodyHasForbiddenToken(raw)) return { status: "invalid" };
+  return { status: "hit", raw, parsed: envelope };
+}
+
+function wrapKVReadModel({ model, kind, expectedSchemaVersion }) {
+  if (!model || typeof model !== "object" || Array.isArray(model)) return null;
+  if (kind === "public_config" || kind === "feature_flags") {
+    return {
+      schema_version: expectedSchemaVersion,
+      as_of: model.as_of || "2026-05-25T14:00:00Z",
+      served_at: model.served_at || model.generated_at || model.as_of || "2026-05-25T14:00:15Z",
+      source: "kv",
+      stale: Boolean(model.stale || false),
+      data: model.data && typeof model.data === "object" ? model.data : model,
+      warnings: Array.isArray(model.warnings) ? model.warnings : [],
+    };
+  }
+  if (kind === "latest_health") {
+    if (model.schema_version !== "kv.latest_health.v1") return null;
+    if (!model.as_of || !model.sources || !model.overall_status) return null;
+    return {
+      schema_version: expectedSchemaVersion,
+      as_of: model.as_of,
+      served_at: model.served_at || model.generated_at || model.as_of,
+      source: "kv",
+      stale: Boolean(model.stale || false),
+      data: {
+        overall_status: model.overall_status,
+        sources: model.sources,
+      },
+      warnings: Array.isArray(model.warnings) ? model.warnings : [],
+    };
+  }
+  if (kind === "latest_bundle") {
+    if (model.schema_version !== "kv.latest_bundle.v1") return null;
+    if (!model.as_of || !model.symbol || !model.section_statuses) return null;
+    const data = { ...model };
+    delete data.schema_version;
+    delete data.served_at;
+    delete data.generated_at;
+    return {
+      schema_version: expectedSchemaVersion,
+      as_of: model.as_of,
+      served_at: model.served_at || model.generated_at || model.bundle_created_at || model.as_of,
+      source: "kv",
+      stale: Boolean(model.stale || false),
+      data,
+      warnings: Array.isArray(model.warnings) ? model.warnings : [],
+    };
+  }
+  return null;
+}
+
+function fixtureResult(fixtureName) {
+  const fixture = FIXTURES[fixtureName];
+  if (!fixture) return null;
+  return { raw: fixture.raw, parsed: fixture.parsed };
+}
+
+async function readRoutePayload({
+  env,
+  fixtureName,
+  kvKey,
+  kind,
+  expectedSchemaVersion,
+}) {
+  if (kvKey) {
+    const kvResult = await readModelFromKV({
+      env,
+      key: kvKey,
+      kind,
+      expectedSchemaVersion,
+    });
+    if (kvResult.status === "hit") return kvResult;
+    if (kvResult.status === "invalid" || kvResult.status === "error") {
+      return kvResult;
+    }
+  }
+  const fallback = fixtureResult(fixtureName);
+  if (!fallback) return { status: "fixture_missing" };
+  return { status: "hit", ...fallback };
 }
 
 function buildHeaders({
@@ -229,7 +436,7 @@ function blobNotAvailableResponse({ origin, requestId, method }) {
 // /v1/bundles/latest?symbol=...
 // --------------------------------------------------------------------------
 
-function bundlesLatestResponse({ url, origin, requestId, method }) {
+async function bundlesLatestResponse({ url, origin, requestId, method, env }) {
   const rawSymbol = url.searchParams.get("symbol");
   if (!rawSymbol) {
     return errorResponse({
@@ -263,8 +470,24 @@ function bundlesLatestResponse({ url, origin, requestId, method }) {
       method,
     });
   }
-  const fixture = FIXTURES[fixtureName];
-  if (!fixture) {
+  const result = await readRoutePayload({
+    env,
+    fixtureName,
+    kvKey: `${KV_PREFIX_LATEST_BUNDLE}${rawSymbol}`,
+    kind: "latest_bundle",
+    expectedSchemaVersion: "read.bundle.v1",
+  });
+  if (result.status === "error" || result.status === "invalid") {
+    return errorResponse({
+      status: 502,
+      code: "network_error",
+      message: "KV read model unavailable",
+      origin,
+      requestId,
+      method,
+    });
+  }
+  if (result.status === "fixture_missing") {
     return errorResponse({
       status: 500,
       code: "unknown_error",
@@ -275,10 +498,10 @@ function bundlesLatestResponse({ url, origin, requestId, method }) {
     });
   }
   return jsonResponse({
-    body: fixture.raw,
+    body: result.raw,
     status: 200,
-    schemaVersion: fixture.parsed.schema_version,
-    source: fixture.parsed.source,
+    schemaVersion: result.parsed.schema_version,
+    source: result.parsed.source,
     origin,
     requestId,
     cacheControl: "private, max-age=60",
@@ -295,9 +518,10 @@ function bundlesLatestResponse({ url, origin, requestId, method }) {
  * Workers fetch handler).
  *
  * @param {Request} request
+ * @param {object=} env
  * @returns {Promise<Response>}
  */
-export async function handleRequest(request) {
+export async function handleRequest(request, env = undefined) {
   let url;
   try {
     url = new URL(request.url);
@@ -356,14 +580,32 @@ export async function handleRequest(request) {
 
   // /v1/bundles/latest
   if (path === BUNDLES_LATEST_PATH) {
-    return bundlesLatestResponse({ url, origin, requestId, method });
+    return bundlesLatestResponse({ url, origin, requestId, method, env });
   }
 
   // Endpoints simples por mapa
-  const fixtureName = ROUTE_FIXTURES[path];
-  if (fixtureName) {
-    const fixture = FIXTURES[fixtureName];
-    if (!fixture) {
+  const route = ROUTE_FIXTURES[path];
+  if (route) {
+    const fixtureName = typeof route === "string" ? route : route.fixture;
+    const expectedSchemaVersion = fixtureResult(fixtureName)?.parsed.schema_version;
+    const result = await readRoutePayload({
+      env,
+      fixtureName,
+      kvKey: typeof route === "string" ? null : route.kvKey,
+      kind: typeof route === "string" ? null : route.kind,
+      expectedSchemaVersion,
+    });
+    if (result.status === "error" || result.status === "invalid") {
+      return errorResponse({
+        status: 502,
+        code: "network_error",
+        message: "KV read model unavailable",
+        origin,
+        requestId,
+        method,
+      });
+    }
+    if (result.status === "fixture_missing") {
       return errorResponse({
         status: 500,
         code: "unknown_error",
@@ -374,10 +616,10 @@ export async function handleRequest(request) {
       });
     }
     return jsonResponse({
-      body: fixture.raw,
+      body: result.raw,
       status: 200,
-      schemaVersion: fixture.parsed.schema_version,
-      source: fixture.parsed.source,
+      schemaVersion: result.parsed.schema_version,
+      source: result.parsed.source,
       origin,
       requestId,
       cacheControl: "private, max-age=30",
@@ -403,8 +645,8 @@ export default {
    * @param {Request} request
    * @returns {Promise<Response>}
    */
-  fetch(request /*, env, ctx */) {
-    return handleRequest(request);
+  fetch(request, env /*, ctx */) {
+    return handleRequest(request, env);
   },
 };
 
@@ -413,9 +655,16 @@ export const _internals = Object.freeze({
   FIXTURES_DIR,
   CORS_ALLOWED_ORIGINS,
   ROUTE_FIXTURES,
+  KV_BINDING_NAMES,
+  KV_KEY_PUBLIC_CONFIG,
+  KV_KEY_FEATURE_FLAGS,
+  KV_KEY_LATEST_HEALTH,
+  KV_PREFIX_LATEST_BUNDLE,
   BUNDLES_LATEST_PATH,
   BLOB_BUNDLE_PREFIX,
   BLOB_MANIFEST_PREFIX,
   SUPPORTED_BUNDLE_SYMBOLS,
   deterministicRequestId,
+  getKVBinding,
+  readModelFromKV,
 });

@@ -30,6 +30,19 @@ function loadFixture(name) {
   return raw.endsWith("\n") ? raw.slice(0, -1) : raw;
 }
 
+function fakeKV(entries) {
+  const calls = [];
+  return {
+    calls,
+    async get(key) {
+      calls.push(key);
+      return Object.prototype.hasOwnProperty.call(entries, key)
+        ? entries[key]
+        : null;
+    },
+  };
+}
+
 // --------------------------------------------------------------------------
 // Module surface
 // --------------------------------------------------------------------------
@@ -47,6 +60,11 @@ describe("module surface", () => {
     assert.ok(_internals.FIXTURES_DIR);
     assert.ok(_internals.CORS_ALLOWED_ORIGINS instanceof Set);
     assert.ok(_internals.ROUTE_FIXTURES);
+    assert.deepEqual(_internals.KV_BINDING_NAMES, ["KV_BITHUB", "KV"]);
+    assert.equal(_internals.KV_KEY_PUBLIC_CONFIG, "public_config");
+    assert.equal(_internals.KV_KEY_FEATURE_FLAGS, "feature_flags");
+    assert.equal(_internals.KV_KEY_LATEST_HEALTH, "latest_health:data_layer");
+    assert.equal(_internals.KV_PREFIX_LATEST_BUNDLE, "latest_bundle:");
     assert.equal(_internals.BLOB_BUNDLE_PREFIX, "/v1/blobs/bundle/");
     assert.equal(_internals.BLOB_MANIFEST_PREFIX, "/v1/blobs/manifest/");
   });
@@ -155,6 +173,176 @@ describe("/v1/bundles/latest", () => {
     assert.equal(res.status, 400);
     const parsed = JSON.parse(await res.text());
     assert.equal(parsed.error.code, "validation_error");
+  });
+});
+
+// --------------------------------------------------------------------------
+// RW-2: KV fake/local read bindings
+// --------------------------------------------------------------------------
+
+describe("RW-2 KV fake/local binding", () => {
+  test("sem binding KV continua servindo bytes exatos das fixtures", async () => {
+    for (const route of MIN_ROUTES) {
+      const res = await handleRequest(makeReq(route.path));
+      assert.equal(await res.text(), loadFixture(route.fixture));
+    }
+    const bundle = await handleRequest(
+      makeReq("/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT")
+    );
+    assert.equal(await bundle.text(), loadFixture("bundles-latest-BTC_USDT_USDT.json"));
+  });
+
+  test("usa env.KV_BITHUB.get(key) para public_config", async () => {
+    const kvEnvelope = {
+      as_of: "2026-05-26T10:00:00Z",
+      data: {
+        api_version: "v1",
+        build_id: "rw2-kv-fake",
+        feature_flags: { read_worker_enabled: true, show_audit_panel: false },
+        supported_symbols_url: "/v1/symbols",
+      },
+      schema_version: "read.public_config.v1",
+      served_at: "2026-05-26T10:00:01Z",
+      source: "kv",
+      stale: false,
+      warnings: ["kv-fake"],
+    };
+    const KV_BITHUB = fakeKV({
+      public_config: JSON.stringify(kvEnvelope),
+    });
+    const res = await handleRequest(makeReq("/v1/config/public"), { KV_BITHUB });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Read-Source"), "kv");
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.public_config.v1");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.data.build_id, "rw2-kv-fake");
+    assert.deepEqual(parsed.warnings, ["kv-fake"]);
+    assert.deepEqual(KV_BITHUB.calls, ["public_config"]);
+  });
+
+  test("usa env.KV_BITHUB.get(key) para feature_flags read-model compacto", async () => {
+    const KV_BITHUB = fakeKV({
+      feature_flags: JSON.stringify({
+        read_worker_enabled: true,
+        show_audit_panel: false,
+      }),
+    });
+    const res = await handleRequest(
+      makeReq("/v1/config/feature-flags", { method: "HEAD" }),
+      { KV_BITHUB }
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.feature_flags.v1");
+    assert.equal(await res.text(), "");
+    assert.deepEqual(KV_BITHUB.calls, ["feature_flags"]);
+  });
+
+  test("usa env.KV_BITHUB.get(key) para latest_health:data_layer", async () => {
+    const KV_BITHUB = fakeKV({
+      "latest_health:data_layer": JSON.stringify({
+        schema_version: "kv.latest_health.v1",
+        as_of: "2026-05-26T10:02:00Z",
+        generated_at: "2026-05-26T10:02:03Z",
+        overall_status: "ok",
+        sources: {
+          bybit_public: {
+            cache_hit: true,
+            degraded: false,
+            error_code: null,
+            last_event_at: "2026-05-26T10:02:00Z",
+            latency_ms: 1,
+            status: "ok",
+          },
+        },
+      }),
+    });
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.health.v1");
+    assert.equal(res.headers.get("X-Bithub-Read-Source"), "kv");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.as_of, "2026-05-26T10:02:00Z");
+    assert.equal(parsed.served_at, "2026-05-26T10:02:03Z");
+    assert.equal(parsed.data.overall_status, "ok");
+    assert.equal(parsed.data.sources.bybit_public.cache_hit, true);
+    assert.deepEqual(KV_BITHUB.calls, ["latest_health:data_layer"]);
+  });
+
+  test("usa env.KV_BITHUB.get(key) para latest_bundle:{symbol}", async () => {
+    const KV_BITHUB = fakeKV({
+      "latest_bundle:BTC/USDT:USDT": JSON.stringify({
+        schema_version: "kv.latest_bundle.v1",
+        as_of: "2026-05-26T10:03:00Z",
+        bundle_created_at: "2026-05-26T10:03:05Z",
+        overall_status: "ok",
+        stale: false,
+        symbol: "BTC/USDT:USDT",
+        section_statuses: {
+          market: {
+            error_code: null,
+            mandatory: true,
+            present: true,
+            source: "bybit_public",
+            stale: false,
+            status: "ok",
+          },
+        },
+        snapshot_refs: { market: "01HZXKVFAKE000000000000001" },
+        r2_bundle_key: "bundles/2026-05-26/BTC_USDT_USDT/01HZXKVFAKE000000000000001.json",
+      }),
+    });
+    const res = await handleRequest(
+      makeReq("/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT"),
+      { KV_BITHUB }
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.bundle.v1");
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.data.symbol, "BTC/USDT:USDT");
+    assert.equal(parsed.data.overall_status, "ok");
+    assert.equal(parsed.served_at, "2026-05-26T10:03:05Z");
+    assert.deepEqual(KV_BITHUB.calls, ["latest_bundle:BTC/USDT:USDT"]);
+  });
+
+  test("KV miss cai para fixture local", async () => {
+    const KV_BITHUB = fakeKV({});
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), loadFixture("health.json"));
+    assert.deepEqual(KV_BITHUB.calls, ["latest_health:data_layer"]);
+  });
+
+  test("KV com JSON invalido falha fechado com read.error.v1 sem stack", async () => {
+    const KV_BITHUB = fakeKV({ public_config: "{not-json" });
+    const res = await handleRequest(makeReq("/v1/config/public"), { KV_BITHUB });
+    assert.equal(res.status, 502);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.error.v1");
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.error.code, "network_error");
+    assert.ok(!body.includes("SyntaxError"));
+  });
+
+  test("default fetch repassa env para handleRequest", async () => {
+    const KV_BITHUB = fakeKV({
+      public_config: JSON.stringify({
+        as_of: "2026-05-26T10:04:00Z",
+        data: {
+          api_version: "v1",
+          build_id: "default-fetch-kv",
+          feature_flags: { read_worker_enabled: true },
+          supported_symbols_url: "/v1/symbols",
+        },
+        schema_version: "read.public_config.v1",
+        served_at: "2026-05-26T10:04:01Z",
+        source: "kv",
+        stale: false,
+        warnings: [],
+      }),
+    });
+    const res = await workerDefault.fetch(makeReq("/v1/config/public"), { KV_BITHUB });
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.data.build_id, "default-fetch-kv");
   });
 });
 
