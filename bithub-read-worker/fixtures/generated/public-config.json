@@ -1,0 +1,1 @@
+{"as_of":"2026-05-25T14:00:00Z","data":{"api_version":"v1","build_id":"phase0-skeleton-2026-05-25","feature_flags":{"read_worker_enabled":true,"show_audit_panel":true},"supported_symbols_url":"/v1/symbols"},"schema_version":"read.public_config.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}

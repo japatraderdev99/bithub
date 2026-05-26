@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-density="compact">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1280, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="dark" />
+    <title>Bithub — Read-Only Dashboard (Skeleton)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          Bithub<span class="phase">UI-1 · Phase 0 · skeleton</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="toolbar">
+          <span id="footer-freshness-mirror" class="muted mono" aria-hidden="true"></span>
+          <button id="density-toggle" type="button" aria-pressed="false">
+            density: compact
+          </button>
+        </div>
+      </header>
+
+      <aside class="app-sidebar" aria-label="Primary navigation">
+        <nav>
+          <a class="nav-item" href="#/" data-nav="/"><span>Dashboard</span><span class="key">/</span></a>
+          <a class="nav-item" href="#/health" data-nav="/health"><span>Health</span><span class="key">h</span></a>
+          <a class="nav-item" href="#/config" data-nav="/config"><span>Config</span><span class="key">c</span></a>
+          <a class="nav-item" href="#/source-status" data-nav="/source-status"><span>Source status</span><span class="key">s</span></a>
+          <a class="nav-item" href="#/bundle/BTC%2FUSDT%3AUSDT" data-nav="/bundle"><span>Bundle</span><span class="key">b</span></a>
+          <a class="nav-item" href="#/blobs" data-nav="/blobs"><span>Blobs (503)</span><span class="key">x</span></a>
+        </nav>
+        <div style="padding: 12px; font-size: 11px; color: var(--text-dim); line-height: 1.5;">
+          Read-only. Sem trade, sinal, score ou direcao.
+        </div>
+      </aside>
+
+      <main class="app-content" id="content">
+        <!-- views render here -->
+      </main>
+
+      <footer class="app-footer">
+        <span><span id="footer-dot" class="footer-dot"></span> data-layer</span>
+        <span id="footer-status" class="muted">unknown</span>
+        <span class="spacer"></span>
+        <span id="footer-as-of" class="muted mono">as_of —</span>
+        <span id="footer-served-at" class="muted mono">served_at —</span>
+        <span id="footer-source" class="muted mono">source —</span>
+      </footer>
+    </div>
+    <script type="module" src="/app/main.mjs"></script>
+  </body>
+</html>
