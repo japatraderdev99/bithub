@@ -13,7 +13,7 @@ state. Colors indicate operational status only — never price direction.
 | Path | Role |
 |---|---|
 | `bithub-ui/` | Static HTML/CSS/JS read-only dashboard. ESM-native, zero third-party dependencies. |
-| `bithub-read-worker/` | Offline Worker skeleton serving canonical `/v1/*` envelopes from JSON fixtures. Used by `bithub-ui` during local dev/test. |
+| `bithub-read-worker/` | Read Worker serving canonical `/v1/*` envelopes from deterministic fixtures. Used locally by `bithub-ui`; deployable to Cloudflare Workers via Wrangler. |
 | `.gitignore`, `.env.example` | Repo hygiene. `.env` itself never ships. |
 
 What is **not** in this repo (kept private locally):
@@ -40,10 +40,11 @@ The frontend is served verbatim from `bithub-ui/public/`. No build step,
 no install. `bithub-ui/public/_headers` configures Cloudflare Pages HTTP
 headers for the static assets.
 
-Note: `bithub-read-worker/` is used **locally** by `bithub-ui/scripts/
-dev-server.mjs` for dev/test. It is not a Cloudflare Worker deploy — the
-real Read Worker is a separate operational concern, gated by a future
-operational task.
+Note: `bithub-read-worker/` can run locally through
+`bithub-ui/scripts/dev-server.mjs` and can also be deployed as a
+Cloudflare Worker using `bithub-read-worker/wrangler.toml`. The initial
+Worker remains read-only and fixture-backed: no KV, D1, R2, Access,
+Queue, Cron, Bybit private, or secret binding is required.
 
 ## Local development
 

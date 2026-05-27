@@ -1,45 +1,43 @@
-# bithub-read-worker — Skeleton + KV/D1/edge local (H-013/RW-2/RW-3/RW-7)
+# bithub-read-worker — Read Worker fixture-backed (H-013/RW-2/RW-3/RW-7)
 
-Worker de leitura **offline/local** que serve os envelopes canônicos
+Worker de leitura **read-only** que serve os envelopes canônicos
 `/v1/*` definidos em
 [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
 (R-20260525-001) a partir de fixtures determinísticas geradas pelo
-`bithub-data-layer`, de bindings KV/D1 fake/local injetados em teste ou,
-no escopo RW-7, de uma edge policy fake/local injetada em teste.
+`bithub-data-layer` e embutidas no bundle do Worker. Em dev/test, também
+aceita bindings KV/D1 fake/local injetados em teste e, no escopo RW-7,
+uma edge policy fake/local injetada em teste.
 
-Este skeleton **não é o Worker de produção**. É a ponte segura entre o
-backend e a UI prevista em
+Este Worker é a ponte segura entre o backend e a UI prevista em
 [`Frontend-Dashboard-Architecture`](../bithub-vault/01-Architecture/Frontend-Dashboard-Architecture.md):
-a UI-1 consome este skeleton como API HTTP real e estável, em vez de
-inventar mocks no frontend. Quando handoffs futuros plugarem bindings
-KV/D1 reais, os mesmos clientes da UI continuam funcionando sem
-alteração contratual.
+a UI-1 consome uma API HTTP real e estável, em vez de inventar mocks no
+frontend. O deploy inicial continua fixture-backed: não cria KV, D1, R2,
+Access, Queue, Cron, segredo, Bybit private ou qualquer integração de
+ordem/trade.
 
 ## Escopo declarado
 
-| Item | Skeleton | Worker real (futuro) |
+| Item | Worker atual | Worker futuro |
 |---|---|---|
-| Runtime | Node 22+ (node:test) | Cloudflare Workers |
-| Dados | Fixtures JSON em disco + KV/D1 fake injetável | KV + D1 + R2 + presigned |
-| Auth | Edge policy fake/local opcional | Cloudflare Access JWT |
+| Runtime | Node 22+ em teste; Cloudflare Workers em deploy | Cloudflare Workers |
+| Dados | Fixtures embutidas + KV/D1 fake injetável em teste | KV + D1 + R2 + presigned |
+| Auth | Edge policy fake/local opcional em teste | Cloudflare Access JWT |
 | CORS | Allowlist hard-coded testada | Cloudflare Access / Worker |
 | Clock | Constantes determinísticas | `Date.now()` |
 | IDs | `01HZX-SKEL-<hash>` por path | ULID/UUIDv7 por request |
-| Deploy | **Nenhum** | `wrangler deploy` |
+| Deploy | `wrangler deploy` via `wrangler.toml` | Pipeline operacional versionado |
 
 ## O que **NÃO está** neste skeleton
 
 - `npm install`, `pnpm install`, `package.json`, `tsconfig.json`,
-  `wrangler.toml`.
-- `wrangler`, `npx`, deploy, push, commit.
-- Leitura de `.env`, `process.env`, secrets, tokens, chaves Cloudflare.
+  bundle step externo ou framework HTTP.
+- Leitura de `.env`, `process.env`, secrets, tokens, chaves Cloudflare em runtime.
 - Bindings KV/D1/R2 reais; SQL real contra `data_bundle_record`,
   `*_snapshot_record`, `audit_event`, `source_status_event`.
 - R2 presigned URLs (R-B3 bloqueante registrado em
   [`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)
   seção 11.3). `/v1/blobs/*` responde `503` com o warning literal
   `"blobs not available in skeleton"`.
-- TypeScript compilado, dependência externa, framework HTTP.
 - Validação JWT real do Cloudflare Access.
 - Rate limit real via WAF/Cloudflare.
 - Webhook, mutação, escrita, ordem, posição, wallet, sinal, score,
@@ -118,8 +116,8 @@ compactos H-010:
 - `kv.latest_bundle.v1` vira envelope `read.bundle.v1`;
 - `public_config` e `feature_flags` podem ser dicts públicos compactos.
 
-O Worker continua sem `wrangler`, sem namespace real, sem `.env`, sem
-rede e sem escrita em KV. Sem bindings locais, os bytes das fixtures
+O Worker continua sem namespace KV real, sem `.env`, sem rede de
+provider e sem escrita em KV. Sem bindings locais, os bytes das fixtures
 H-013 continuam intactos; em `/v1/health` e `/v1/bundles/latest`, KV
 miss/stale passa por D1 fake quando houver binding D1. JSON inválido,
 erro de `get()` ou token proibido no payload falha fechado ou cai para
@@ -168,7 +166,7 @@ Query contract futuro, ainda sem SQL no runtime local:
 - `latest_bundle`: D1 lê o último `data_bundle_record` do símbolo e seus
   `bundle_section_status_record` associados.
 
-RW-3 continua sem `wrangler`, sem D1 real, sem `.env`, sem rede e sem
+RW-3 continua sem D1 real, sem `.env`, sem rede de provider e sem
 escrita em D1.
 
 ## RW-7: edge policy fake/local
@@ -216,7 +214,7 @@ Campos proibidos no log local:
   token, segredo ou PII.
 
 RW-7 continua sem validar JWT real, sem Cloudflare Access real, sem WAF,
-sem Logpush, sem `.env`, sem rede, sem `wrangler` e sem deploy.
+sem Logpush, sem `.env` e sem rede de provider.
 
 ## Como rodar
 
@@ -248,7 +246,17 @@ node --test bithub-read-worker/tests/read-worker.test.mjs
 Requer Node 22+ (globais `Request`/`Response`/`URL`, `node:test`,
 `node:assert/strict`). Sem dependência externa.
 
-### 4. Smoke manual (opcional)
+### 4. Dry-run de deploy (opcional, Cloudflare autorizado)
+
+```bash
+cd "/Users/gabrielcasarin/Documents/Bithub Project/bithub-read-worker"
+npx wrangler deploy --dry-run
+```
+
+O dry-run deve reportar `No bindings found`. O bundle usa fixtures
+embutidas e não requer KV, D1, R2, Access, Queue, Cron ou secrets.
+
+### 5. Smoke manual (opcional)
 
 ```javascript
 import { handleRequest } from "./src/index.mjs";

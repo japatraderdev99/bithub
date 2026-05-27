@@ -28,6 +28,9 @@ export const READ_SOURCES = Object.freeze(
   new Set(["kv", "d1", "r2", "derived"])
 );
 
+export const PRODUCTION_READ_WORKER_BASE =
+  "https://bithub-read-worker.guiydantas.workers.dev";
+
 const ENVELOPE_REQUIRED_KEYS = [
   "schema_version",
   "as_of",
@@ -145,6 +148,15 @@ function pickHeaders(headers) {
   };
 }
 
+function defaultBaseUrl() {
+  const loc =
+    typeof globalThis !== "undefined" && globalThis.location
+      ? globalThis.location
+      : null;
+  if (!loc || loc.hostname !== "bithub-clo.pages.dev") return "";
+  return PRODUCTION_READ_WORKER_BASE;
+}
+
 async function readJsonSafe(response) {
   const text = await response.text();
   if (text.length === 0) return { parsed: null, raw: text };
@@ -164,7 +176,7 @@ async function readJsonSafe(response) {
  *   { kind: "transport_error",  message }
  */
 async function request(path, init = {}, opts = {}) {
-  const { baseUrl = "" } = opts;
+  const { baseUrl = defaultBaseUrl() } = opts;
   let response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
@@ -306,6 +318,7 @@ export function fetchBlobManifest(id, opts = {}) {
 
 export const _internals = Object.freeze({
   request,
+  defaultBaseUrl,
   validateEnvelope,
   validateErrorEnvelope,
   isIsoUtc,

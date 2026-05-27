@@ -1,0 +1,20 @@
+// fixtures.generated.mjs — deterministic Phase 0 read envelopes.
+//
+// This file lets the Read Worker run in Cloudflare Workers without Node's
+// fs/path modules. Keep values byte-for-byte aligned with
+// bithub-read-worker/fixtures/generated/*.json.
+
+export const EMBEDDED_FIXTURE_RAW = Object.freeze({
+  "bundles-latest-BTC_USDT_USDT.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"as_of":"2026-05-25T14:00:00Z","bundle_created_at":"2026-05-25T14:00:10Z","overall_status":"degraded","r2_bundle_key":"bundles/2026-05-25/BTC_USDT_USDT/01HZX5R7Q3M2K4P8N6B1Y9BUN00.json","section_statuses":{"derivatives":{"error_code":null,"mandatory":true,"present":true,"source":"bybit_public","stale":false,"status":"ok"},"fundamentals":{"error_code":null,"mandatory":false,"present":true,"source":"defillama_rest","stale":false,"status":"ok"},"macro":{"error_code":"bad_response","mandatory":false,"present":true,"source":"fred","stale":false,"status":"degraded"},"market":{"error_code":null,"mandatory":true,"present":true,"source":"bybit_public","stale":false,"status":"ok"}},"snapshot_refs":{"derivatives":"01HZX5R7Q3M2K4P8N6B1Y9DRV00","fundamentals":"01HZX5R7Q3M2K4P8N6B1Y9FND00","macro":"01HZX5R7Q3M2K4P8N6B1Y9MCR00","market":"01HZX5R7Q3M2K4P8N6B1Y9MKT00"},"stale":false,"symbol":"BTC/USDT:USDT"},"schema_version":"read.bundle.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}',
+  "feature-flags.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"read_worker_enabled":true,"show_audit_panel":true},"schema_version":"read.feature_flags.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}',
+  "health.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"overall_status":"degraded","sources":{"bybit_public":{"cache_hit":false,"degraded":false,"error_code":null,"last_event_at":"2026-05-25T14:00:00Z","latency_ms":142,"status":"ok"},"defillama_rest":{"cache_hit":false,"degraded":false,"error_code":null,"last_event_at":"2026-05-25T13:30:12Z","latency_ms":215,"status":"ok"},"fred":{"cache_hit":true,"degraded":true,"error_code":"bad_response","last_event_at":"2026-05-25T08:00:00Z","latency_ms":98,"status":"degraded"}}},"schema_version":"read.health.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}',
+  "public-config.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"api_version":"v1","build_id":"phase0-skeleton-2026-05-25","feature_flags":{"read_worker_enabled":true,"show_audit_panel":true},"supported_symbols_url":"/v1/symbols"},"schema_version":"read.public_config.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}',
+  "source-status.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"events":[{"cache_hit":false,"created_at":"2026-05-25T14:00:00Z","degraded":false,"endpoint":"market/tickers","error_code":null,"event_id":"01HZX5R7Q3M2K4P8N6B1Y9EVT01","http_status":200,"latency_ms":142,"retry_count":0,"run_id":"01HZX5R7Q3M2K4P8N6B1Y9RUN00","source":"bybit_public","status":"ok"},{"cache_hit":false,"created_at":"2026-05-25T13:30:12Z","degraded":false,"endpoint":"fundamentals/chains","error_code":null,"event_id":"01HZX5R7Q3M2K4P8N6B1Y9EVT02","http_status":200,"latency_ms":215,"retry_count":0,"run_id":"01HZX5R7Q3M2K4P8N6B1Y9RUN00","source":"defillama_rest","status":"ok"},{"cache_hit":true,"created_at":"2026-05-25T08:00:00Z","degraded":true,"endpoint":"fred/series/observations","error_code":"bad_response","event_id":"01HZX5R7Q3M2K4P8N6B1Y9EVT03","http_status":200,"latency_ms":98,"retry_count":1,"run_id":"01HZX5R7Q3M2K4P8N6B1Y9RUN00","source":"fred","status":"degraded"}],"page":{"limit":100,"next_cursor":null}},"schema_version":"read.source_status.v1","served_at":"2026-05-25T14:00:15Z","source":"d1","stale":false,"warnings":[]}',
+  "symbols.json":
+    '{"as_of":"2026-05-25T14:00:00Z","data":{"symbols":[{"category":"linear","symbol":"BTC/USDT:USDT"},{"category":"linear","symbol":"ETH/USDT:USDT"}]},"schema_version":"read.symbols.v1","served_at":"2026-05-25T14:00:15Z","source":"kv","stale":false,"warnings":[]}',
+});

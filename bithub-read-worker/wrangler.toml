@@ -1,0 +1,8 @@
+name = "bithub-read-worker"
+main = "src/index.mjs"
+compatibility_date = "2026-05-27"
+workers_dev = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1

@@ -4,7 +4,7 @@
 // API fetch do Cloudflare Workers (`export default { fetch }`).
 //
 // Regras estritas (handoffs H-013/RW-2/RW-3/RW-7):
-// - serve apenas as fixtures determinísticas em
+// - serve apenas as fixtures determinísticas embutidas a partir de
 //   `bithub-read-worker/fixtures/generated/*.json`, geradas pelo script
 //   Python `bithub-data-layer/scripts/export_read_worker_fixtures.py`;
 // - quando `env.KV_BITHUB`/`env.KV` existir, tenta ler KV via get(key);
@@ -12,8 +12,7 @@
 //   fake/local via getReadModel(kind, params) para health/latest bundle;
 // - sem bindings KV/D1, continua servindo exatamente os bytes das fixtures;
 // - nao inventa payload; nao gera clock; nao gera id aleatorio;
-// - nao chama rede; nao le `.env`; nao le `process.env`; nao usa
-//   wrangler/npx/Cloudflare real;
+// - nao chama rede; nao le `.env`; nao le `process.env`;
 // - endpoints minimos /v1/* respondem 200 com envelope canonico;
 // - /v1/blobs/bundle/* e /v1/blobs/manifest/* respondem 503 com warning
 //   literal "blobs not available in skeleton";
@@ -25,12 +24,9 @@
 // Cloudflare real; RW-3 prepara o formato do fallback D1 sem tocar D1 real;
 // RW-7 prepara contrato de borda sem tocar Access/WAF/Logpush reais.
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { EMBEDDED_FIXTURE_RAW } from "./fixtures.generated.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const FIXTURES_DIR = resolve(__dirname, "..", "fixtures", "generated");
+const FIXTURES_DIR = "bithub-read-worker/fixtures/generated";
 
 // --------------------------------------------------------------------------
 // Allowlist CORS (R-001 secao 8). Strict, sem wildcard.
@@ -53,22 +49,9 @@ const CORS_MAX_AGE = "600";
 // Carga das fixtures (sincrono, no module load).
 // --------------------------------------------------------------------------
 
-/**
- * Le todas as fixtures JSON do diretorio canonico.
- * Retorna {filename -> {raw: string, parsed: object}}.
- */
 function loadFixtures() {
-  if (!existsSync(FIXTURES_DIR)) {
-    throw new Error(
-      `read-worker skeleton: fixtures dir not found at ${FIXTURES_DIR}. ` +
-        `Run scripts/export_read_worker_fixtures.py first.`
-    );
-  }
   const out = Object.create(null);
-  const files = readdirSync(FIXTURES_DIR).filter((f) => f.endsWith(".json"));
-  for (const file of files) {
-    const path = resolve(FIXTURES_DIR, file);
-    const raw = readFileSync(path, "utf-8");
+  for (const [file, raw] of Object.entries(EMBEDDED_FIXTURE_RAW)) {
     const parsed = JSON.parse(raw);
     out[file] = { raw: raw.endsWith("\n") ? raw.slice(0, -1) : raw, parsed };
   }
