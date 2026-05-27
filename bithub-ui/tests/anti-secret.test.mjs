@@ -62,6 +62,11 @@ const EXEMPT_FILES = Object.freeze(
     resolve(__dirname, "anti-secret.test.mjs"),
     resolve(__dirname, "read-client.test.mjs"),
     resolve(__dirname, "dev-server.test.mjs"),
+    // live-tail.test.mjs exercita isSensitive() do live-tail.mjs sidecar.
+    // Inclui literais "api_key=", "Authorization:", "Bearer " como input
+    // de teste para garantir que o parser descarta linhas sensiveis vindas
+    // do log. Sem essa isencao o sweep estatico bate em si proprio.
+    resolve(__dirname, "live-tail.test.mjs"),
   ])
 );
 

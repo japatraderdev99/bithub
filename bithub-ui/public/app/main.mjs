@@ -15,6 +15,7 @@ import { render as renderSourceStatus } from "./views/source-status.mjs";
 import { render as renderBundle } from "./views/bundle.mjs";
 import { render as renderBlobs } from "./views/blobs.mjs";
 import { render as renderDevStates } from "./views/dev-states.mjs";
+import { render as renderLive } from "./views/live.mjs";
 
 // --------------------------------------------------------------------------
 // Routes
@@ -36,6 +37,7 @@ registerRoute(/^\/dev\/states$/, (_p) => ({
   view: "dev-states",
   render: renderDevStates,
 }));
+registerRoute(/^\/live$/, (_p) => ({ view: "live", render: renderLive }));
 
 // --------------------------------------------------------------------------
 // Density toggle
@@ -57,6 +59,11 @@ function wireDensityToggle() {
 // --------------------------------------------------------------------------
 
 function wireSidebar() {
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  document.querySelectorAll("[data-local-only='true']").forEach((el) => {
+    el.hidden = !isLocalHost;
+    if (!isLocalHost) el.setAttribute("aria-hidden", "true");
+  });
   const items = document.querySelectorAll("[data-nav]");
   function paint(path) {
     items.forEach((el) => {

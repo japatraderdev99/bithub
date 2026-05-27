@@ -137,6 +137,35 @@ describe("/v1/* routing via handleRequest", () => {
   });
 });
 
+describe("/live/* local-only sidecar guard", () => {
+  it("GET /live/positions is disabled unless explicitly enabled", async () => {
+    const res = await fetch(`${base}/live/positions`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.error, "live tail not enabled");
+    assert.equal(body.detail, null);
+  });
+
+  it("POST /live/positions is rejected read-only with Allow header", async () => {
+    const res = await fetch(`${base}/live/positions`, { method: "POST" });
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("Allow"), "GET");
+    assert.equal(await res.text(), "method not allowed");
+  });
+
+  it("static nav marks Live cockpit as local-only", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "index.html"), "utf8");
+    assert.ok(body.includes('data-nav="/live" data-local-only="true"'));
+    assert.ok(!body.toLowerCase().includes("/users/"));
+  });
+
+  it("Live cockpit view does not embed operator-local paths", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "app", "views", "live.mjs"), "utf8");
+    assert.ok(!body.toLowerCase().includes("/users/"));
+    assert.ok(!body.includes("Project Trading Agora Vai"));
+  });
+});
+
 describe("hygiene", () => {
   it("PUBLIC_DIR resolves under bithub-ui/public", () => {
     assert.ok(PUBLIC_DIR.endsWith("/bithub-ui/public"));

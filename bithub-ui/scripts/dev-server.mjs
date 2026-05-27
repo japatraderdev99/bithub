@@ -23,9 +23,104 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { handleRequest } from "../../bithub-read-worker/src/index.mjs";
+import { start as startLiveTail, snapshot as snapshotLiveTail } from "./live-tail.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PUBLIC_DIR = resolve(__dirname, "..", "public");
+
+// --------------------------------------------------------------------------
+// Live tail (opt-in via BITHUB_LIVE_TAIL_LOG env var)
+// --------------------------------------------------------------------------
+
+let liveTailHandle = null;
+let liveTailError = null;
+
+function maybeBootLiveTail() {
+  const logPath = process.env.BITHUB_LIVE_TAIL_LOG;
+  if (!logPath) return;
+  const stateDir = process.env.BITHUB_LIVE_STATE_DIR || null;
+  try {
+    liveTailHandle = startLiveTail({ logPath, stateDir });
+    // eslint-disable-next-line no-console
+    console.log(`live-tail enabled: log=${logPath} state=${stateDir || "(none)"}`);
+  } catch (err) {
+    liveTailError = err && err.message ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(`live-tail disabled: ${liveTailError}`);
+  }
+}
+
+function jsonRes(res, status, body) {
+  const buf = Buffer.from(JSON.stringify(body));
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+  });
+  res.end(buf);
+}
+
+function handleLiveRequest(req, res, path) {
+  if (req.method !== "GET") {
+    res.writeHead(405, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Allow": "GET",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+    });
+    res.end("method not allowed");
+    return;
+  }
+  if (!liveTailHandle) {
+    jsonRes(res, 503, {
+      error: "live tail not enabled",
+      hint: "set BITHUB_LIVE_TAIL_LOG and (optionally) BITHUB_LIVE_STATE_DIR before starting the dev-server",
+      detail: liveTailError || null,
+    });
+    return;
+  }
+  const snap = snapshotLiveTail(liveTailHandle);
+
+  if (path === "/live/positions") {
+    jsonRes(res, 200, { positions: snap.positions, started_at: snap.startedAt });
+    return;
+  }
+  if (path === "/live/scanner") {
+    jsonRes(res, 200, { scanner: snap.scanner, started_at: snap.startedAt });
+    return;
+  }
+  if (path === "/live/events") {
+    const url = new URL(req.url, "http://localhost");
+    const since = url.searchParams.get("since");
+    const limit = Math.max(0, Math.min(500, Number(url.searchParams.get("limit") || 50)));
+    let events = snap.events;
+    if (since) {
+      events = events.filter((e) => e.ts > since);
+    }
+    if (limit && events.length > limit) {
+      events = events.slice(events.length - limit);
+    }
+    jsonRes(res, 200, { events });
+    return;
+  }
+  if (path === "/live/raw") {
+    const url = new URL(req.url, "http://localhost");
+    const n = Math.max(0, Math.min(500, Number(url.searchParams.get("n") || 50)));
+    const lines = n ? snap.rawLines.slice(-n) : snap.rawLines;
+    jsonRes(res, 200, { lines });
+    return;
+  }
+  jsonRes(res, 404, { error: "unknown live route" });
+}
+
+function isLivePath(path) {
+  return path === "/live/positions"
+    || path === "/live/scanner"
+    || path === "/live/events"
+    || path === "/live/raw";
+}
 
 const MIME_TYPES = Object.freeze({
   ".html": "text/html; charset=utf-8",
@@ -152,6 +247,11 @@ export async function handle(req, res) {
   const url = req.url || "/";
   const path = url.split("?")[0].split("#")[0];
   try {
+    if (isLivePath(path)) {
+      handleLiveRequest(req, res, path);
+      logLine(req, res.statusCode || 200, "live", Date.now() - start);
+      return;
+    }
     if (isReadWorkerPath(path)) {
       const webReq = nodeRequestToWebRequest(req);
       const webRes = await handleRequest(webReq);
@@ -243,6 +343,7 @@ const invokedDirectly = (() => {
 })();
 
 if (invokedDirectly) {
+  maybeBootLiveTail();
   const server = createDevServer();
   server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
@@ -251,7 +352,7 @@ if (invokedDirectly) {
         `(public=${PUBLIC_DIR})`
     );
     console.log(
-      "  routes: /v1/* -> read-worker skeleton; * -> static (public/)"
+      "  routes: /v1/* -> read-worker skeleton; /live/* -> live tail (if enabled); * -> static (public/)"
     );
   });
 }

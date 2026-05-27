@@ -1,0 +1,26 @@
+Monitor v4 | T1: top-100 cada 180s | T2: candidatos cada 45s | tape reading ativo
+[startup] ⚙️  GRASS TP recriado @ 0.506444
+[startup] 📋 GRASS LONG carregada | entry=0.503052 SL=0.50093 TP=0.506444
+[ws-priv] ✅ auth OK — subscrevendo position+order
+[ws-priv] ✅ streams position+order ativos
+[01:05:23] 📊 GRASS LONG | price=0.50341 PnL=+0.07% best=+0.00% | SL=0.50093 TP=0.50644 EMA9=0.50274 mom=WANING
+[01:05:23] 🔍 T1 scan top-100...
+T1 → 7 candidatos: BTC ETH SOL XRP BNB AAVE DOGE
+[01:05:38] 📊 GRASS LONG | price=0.50352 PnL=+0.10% best=+0.10% | SL=0.50093 TP=0.50644 EMA9=0.50276 mom=NORMAL
+[BASE] 🎙️  tape gate 20s...
+[BASE] ✅ tape confirmou: favor=63% | delta_trend=ACELERANDO
+🚀 ENTRADA | BASE SHORT SCORE=72 | TF:1m+5m | BookImb:32%✅ | tape:+✅ | POC:✅
+🔴 EXECUTANDO BASE SHORT | margin=$0.43 lev=10x notional=$4.30 qty=0.026 | risk=$0.43(0.50%) slots=1/4 | SL=0.50644(0.50%) TP=0.50093 R:R=1.82
+[ENTRADA] order-id-xyz123 submetida
+[SL/TP] anexados via trading-stop | SL=0.50644 TP=0.50093
+✅ Posição registrada: BASE @ 0.50352
+[01:05:55] 📊 BASE SHORT | price=0.50330 PnL=+0.04% best=+0.04% | SL=0.50644 TP=0.50093 EMA9=0.50276 mom=NORMAL
+[01:06:12] 📊 GRASS LONG | price=0.50360 PnL=+0.11% best=+0.11% | SL=0.50093 TP=0.50644 EMA9=0.50278 mom=NORMAL
+⏳ near-miss T2: AAVE [falta:VP]
+⏳ near-miss T2: SOL [falta:PB]
+📉 SCORE BAIXO
+[XRPL] ❌ tape rejeitou
+📉 BASE TRAIL → 0.50412 | mom:NORMAL anchor=EMA9 SL→0.50412
+[ws-priv] 🏁 GRASS fechada
+[ws-priv] ⚡ GRASS TakeProfit filled
+[01:07:08] 📊 BASE SHORT | price=0.50298 PnL=+0.11% best=+0.11% | SL=0.50412 TP=0.50093 EMA9=0.50275 mom=NORMAL
