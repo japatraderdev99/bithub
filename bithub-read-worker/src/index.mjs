@@ -860,7 +860,7 @@ export async function handleRequest(request, env = undefined) {
     return respond(errorResponse({
       status: 403,
       code: "validation_error",
-      message: "origin not allowed",
+      message: "preflight not allowed",
       origin,
       requestId,
       method,

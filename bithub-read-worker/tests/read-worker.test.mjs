@@ -709,6 +709,7 @@ describe("CORS stub allowlist", () => {
     const parsed = JSON.parse(await res.text());
     assert.equal(parsed.schema_version, "read.error.v1");
     assert.equal(parsed.error.code, "validation_error");
+    assert.equal(parsed.error.message, "preflight not allowed");
   });
 
   test("OPTIONS sem Access-Control-Request-Method -> 403", async () => {
@@ -716,6 +717,8 @@ describe("CORS stub allowlist", () => {
       makeReq("/v1/health", { method: "OPTIONS", origin: ORIGIN_APP })
     );
     assert.equal(res.status, 403);
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.error.message, "preflight not allowed");
   });
 
   test("OPTIONS sem Origin -> 403", async () => {
