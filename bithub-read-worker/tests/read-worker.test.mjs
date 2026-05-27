@@ -11,6 +11,12 @@ import { fileURLToPath } from "node:url";
 
 import { handleRequest, _internals } from "../src/index.mjs";
 import workerDefault from "../src/index.mjs";
+import {
+  KV_PUBLISH_PLAN_ENTRIES,
+  KVPublishPlanFixtureError,
+  fakeKVFromKVPublishEntries,
+  validateKVPublishEntry,
+} from "./kv-publish-plan-fixture.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = resolve(__dirname, "..", "fixtures", "generated");
@@ -370,6 +376,126 @@ describe("RW-2 KV fake/local binding", () => {
     const res = await workerDefault.fetch(makeReq("/v1/config/public"), { KV_BITHUB });
     const parsed = JSON.parse(await res.text());
     assert.equal(parsed.data.build_id, "default-fetch-kv");
+  });
+});
+
+// --------------------------------------------------------------------------
+// RW-8: KVPublishPlan bridge fixture
+// --------------------------------------------------------------------------
+
+describe("RW-8 KVPublishPlan bridge fixture", () => {
+  test("fixture entries keep KVPublishEntry contract fields and hashes valid", () => {
+    assert.deepEqual(
+      KV_PUBLISH_PLAN_ENTRIES.map((entry) => entry.key),
+      [
+        "feature_flags",
+        "latest_bundle:BTC/USDT:USDT",
+        "latest_health:data_layer",
+        "public_config",
+      ]
+    );
+    for (const entry of KV_PUBLISH_PLAN_ENTRIES) {
+      assert.equal(validateKVPublishEntry(entry), true);
+      assert.equal(typeof entry.value_json, "string");
+      assert.equal(entry.bytes_size, Buffer.byteLength(entry.value_json, "utf8"));
+    }
+  });
+
+  test("fake KV loads entry.value_json by entry.key for health and latest bundle", async () => {
+    const KV_BITHUB = fakeKVFromKVPublishEntries();
+
+    const health = await handleRequest(makeReq("/v1/health"), { KV_BITHUB });
+    assert.equal(health.status, 200);
+    assert.equal(health.headers.get("X-Bithub-Read-Source"), "kv");
+    assert.equal(health.headers.get("X-Bithub-Schema-Version"), "read.health.v1");
+    const healthBody = JSON.parse(await health.text());
+    assert.equal(healthBody.as_of, "2026-05-27T00:00:00Z");
+    assert.equal(healthBody.served_at, "2026-05-27T00:00:05Z");
+    assert.equal(healthBody.data.sources.fred.latency_ms, 12);
+
+    const bundle = await handleRequest(
+      makeReq("/v1/bundles/latest?symbol=BTC%2FUSDT%3AUSDT"),
+      { KV_BITHUB }
+    );
+    assert.equal(bundle.status, 200);
+    assert.equal(bundle.headers.get("X-Bithub-Read-Source"), "kv");
+    assert.equal(bundle.headers.get("X-Bithub-Schema-Version"), "read.bundle.v1");
+    const bundleBody = JSON.parse(await bundle.text());
+    assert.equal(bundleBody.data.symbol, "BTC/USDT:USDT");
+    assert.equal(
+      bundleBody.data.r2_bundle_key,
+      "bundles/2026-05-27/BTC_USDT_USDT/01HZXKVPUBBUN0000000000001.json"
+    );
+
+    assert.deepEqual(KV_BITHUB.calls, [
+      "latest_health:data_layer",
+      "latest_bundle:BTC/USDT:USDT",
+    ]);
+  });
+
+  test("fake KV also serves public_config and feature_flags from plan entries", async () => {
+    const KV_BITHUB = fakeKVFromKVPublishEntries();
+
+    const config = await handleRequest(makeReq("/v1/config/public"), { KV_BITHUB });
+    assert.equal(config.status, 200);
+    assert.equal(config.headers.get("X-Bithub-Schema-Version"), "read.public_config.v1");
+    const configBody = JSON.parse(await config.text());
+    assert.equal(configBody.source, "kv");
+    assert.equal(configBody.data.build_id, "phase0-kv-publish-plan");
+    assert.equal(configBody.data.supported_symbols_url, "/v1/symbols");
+
+    const flags = await handleRequest(makeReq("/v1/config/feature-flags"), { KV_BITHUB });
+    assert.equal(flags.status, 200);
+    assert.equal(flags.headers.get("X-Bithub-Schema-Version"), "read.feature_flags.v1");
+    const flagsBody = JSON.parse(await flags.text());
+    assert.equal(flagsBody.source, "kv");
+    assert.equal(flagsBody.data.read_worker_enabled, true);
+    assert.equal(flagsBody.data.show_audit_panel, false);
+
+    assert.deepEqual(KV_BITHUB.calls, ["public_config", "feature_flags"]);
+  });
+
+  test("entry with bad value_sha256 is rejected before fake KV is built", () => {
+    const badEntry = {
+      ...KV_PUBLISH_PLAN_ENTRIES[0],
+      value_sha256: "0".repeat(64),
+    };
+    assert.throws(
+      () => fakeKVFromKVPublishEntries([badEntry]),
+      KVPublishPlanFixtureError
+    );
+  });
+
+  test("entry outside KV allowlist is rejected before fake KV is built", () => {
+    const badEntry = {
+      ...KV_PUBLISH_PLAN_ENTRIES[0],
+      key: "latest_bundle:ETH/USDT:USDT",
+    };
+    assert.throws(
+      () => fakeKVFromKVPublishEntries([badEntry]),
+      /outside the test allowlist/
+    );
+  });
+
+  test("invalid plan payload follows canonical read.error.v1 fallback", async () => {
+    const badPayloadEntry = {
+      ...KV_PUBLISH_PLAN_ENTRIES.find((entry) => entry.key === "latest_health:data_layer"),
+      bytes_size: 2,
+      value_sha256: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      value_json: "{}",
+    };
+    const KV_BITHUB = fakeKVFromKVPublishEntries([badPayloadEntry]);
+
+    const res = await handleRequest(makeReq("/v1/health"), { KV_BITHUB });
+    assert.equal(res.status, 502);
+    assert.equal(res.headers.get("X-Bithub-Schema-Version"), "read.error.v1");
+    const body = await res.text();
+    const parsed = JSON.parse(body);
+    assert.equal(parsed.schema_version, "read.error.v1");
+    assert.equal(parsed.error.code, "network_error");
+    assert.equal(parsed.error.message, "KV/D1 read model unavailable");
+    assert.ok(!body.includes("KVPublishPlanFixtureError"));
+    assert.ok(!body.includes("SyntaxError"));
   });
 });
 
