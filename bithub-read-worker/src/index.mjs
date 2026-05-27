@@ -44,6 +44,7 @@ const CORS_ALLOWED_METHODS = "GET, HEAD, OPTIONS";
 const CORS_ALLOWED_HEADERS =
   "Content-Type, Cf-Access-Jwt-Assertion, X-Bithub-Request-Id, X-Bithub-Schema-Version";
 const CORS_MAX_AGE = "600";
+const CORS_PREFLIGHT_ALLOWED_REQUEST_METHODS = new Set(["GET", "HEAD"]);
 
 // --------------------------------------------------------------------------
 // Carga das fixtures (sincrono, no module load).
@@ -840,7 +841,14 @@ export async function handleRequest(request, env = undefined) {
   // OPTIONS preflight
   if (method === "OPTIONS") {
     const headers = new Headers();
-    if (origin && CORS_ALLOWED_ORIGINS.has(origin)) {
+    const requestedMethod = request.headers
+      .get("Access-Control-Request-Method")
+      ?.toUpperCase();
+    if (
+      origin
+      && CORS_ALLOWED_ORIGINS.has(origin)
+      && CORS_PREFLIGHT_ALLOWED_REQUEST_METHODS.has(requestedMethod)
+    ) {
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Access-Control-Allow-Methods", CORS_ALLOWED_METHODS);
       headers.set("Access-Control-Allow-Headers", CORS_ALLOWED_HEADERS);
@@ -977,6 +985,7 @@ export default {
 export const _internals = Object.freeze({
   FIXTURES_DIR,
   CORS_ALLOWED_ORIGINS,
+  CORS_PREFLIGHT_ALLOWED_REQUEST_METHODS,
   ROUTE_FIXTURES,
   KV_BINDING_NAMES,
   D1_BINDING_NAMES,

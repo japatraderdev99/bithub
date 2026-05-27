@@ -59,7 +59,7 @@ ordem/trade.
 | Rate-limit fake | GET, HEAD | `read.error.v1` | 429 (`Retry-After`) |
 | Métodos não permitidos | POST/PUT/PATCH/DELETE | `read.error.v1` | 405 (`Allow: GET, HEAD, OPTIONS`) |
 | Rotas desconhecidas | qualquer | `read.error.v1` | 404 |
-| Preflight | OPTIONS | — / `read.error.v1` | 204 com CORS / 403 sem origem |
+| Preflight | OPTIONS | — / `read.error.v1` | 204 com CORS para origem permitida + `Access-Control-Request-Method` GET/HEAD; 403 caso contrario |
 
 Todo response 2xx carrega o envelope canônico
 ([`Read-Worker-v1-Contract`](../bithub-vault/03-Integration/Read-Worker-v1-Contract.md)

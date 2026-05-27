@@ -79,6 +79,7 @@ describe("module surface", () => {
   test("internals expose the canonical maps", () => {
     assert.ok(_internals.FIXTURES_DIR);
     assert.ok(_internals.CORS_ALLOWED_ORIGINS instanceof Set);
+    assert.ok(_internals.CORS_PREFLIGHT_ALLOWED_REQUEST_METHODS instanceof Set);
     assert.ok(_internals.ROUTE_FIXTURES);
     assert.deepEqual(_internals.KV_BINDING_NAMES, ["KV_BITHUB", "KV"]);
     assert.deepEqual(_internals.D1_BINDING_NAMES, ["D1_BITHUB", "DB_BITHUB"]);
@@ -667,7 +668,11 @@ describe("rotas desconhecidas", () => {
 describe("CORS stub allowlist", () => {
   test("OPTIONS com Origin permitido -> 204 com headers CORS", async () => {
     const res = await handleRequest(
-      makeReq("/v1/health", { method: "OPTIONS", origin: ORIGIN_APP })
+      makeReq("/v1/health", {
+        method: "OPTIONS",
+        origin: ORIGIN_APP,
+        headers: { "Access-Control-Request-Method": "GET" },
+      })
     );
     assert.equal(res.status, 204);
     assert.equal(
@@ -683,7 +688,32 @@ describe("CORS stub allowlist", () => {
 
   test("OPTIONS com Origin nao permitido -> 403", async () => {
     const res = await handleRequest(
-      makeReq("/v1/health", { method: "OPTIONS", origin: ORIGIN_BAD })
+      makeReq("/v1/health", {
+        method: "OPTIONS",
+        origin: ORIGIN_BAD,
+        headers: { "Access-Control-Request-Method": "GET" },
+      })
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test("OPTIONS com metodo solicitado nao permitido -> 403", async () => {
+    const res = await handleRequest(
+      makeReq("/v1/health", {
+        method: "OPTIONS",
+        origin: ORIGIN_APP,
+        headers: { "Access-Control-Request-Method": "POST" },
+      })
+    );
+    assert.equal(res.status, 403);
+    const parsed = JSON.parse(await res.text());
+    assert.equal(parsed.schema_version, "read.error.v1");
+    assert.equal(parsed.error.code, "validation_error");
+  });
+
+  test("OPTIONS sem Access-Control-Request-Method -> 403", async () => {
+    const res = await handleRequest(
+      makeReq("/v1/health", { method: "OPTIONS", origin: ORIGIN_APP })
     );
     assert.equal(res.status, 403);
   });
@@ -883,6 +913,25 @@ describe("headers basicos", () => {
     assert.equal(health.headers.get("X-Bithub-Read-Source"), "kv");
     const sourceStatus = await handleRequest(makeReq("/v1/source-status"));
     assert.equal(sourceStatus.headers.get("X-Bithub-Read-Source"), "d1");
+  });
+
+  test("nao emite headers aplicativos sensiveis", async () => {
+    for (const path of [
+      "/v1/health",
+      "/v1/no-such",
+      "/v1/blobs/bundle/whatever",
+    ]) {
+      const res = await handleRequest(makeReq(path));
+      for (const header of [
+        "Authorization",
+        "Set-Cookie",
+        "X-Powered-By",
+        "X-Forwarded-For",
+        "X-Real-IP",
+      ]) {
+        assert.equal(res.headers.get(header), null, `${path} emitted ${header}`);
+      }
+    }
   });
 });
 

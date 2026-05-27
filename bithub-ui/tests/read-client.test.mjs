@@ -20,6 +20,7 @@ import {
   validateErrorEnvelope,
   ENDPOINTS,
   READ_SOURCES,
+  PRODUCTION_READ_WORKER_BASE,
   _internals,
 } from "../public/app/read-client.mjs";
 
@@ -171,6 +172,29 @@ describe("constants", () => {
   });
   it("READ_SOURCES are exactly the 4 R-001 sources", () => {
     assert.deepEqual([...READ_SOURCES].sort(), ["d1", "derived", "kv", "r2"]);
+  });
+
+  it("defaultBaseUrl points Pages production at the live Read Worker only", () => {
+    const originalLocation = Object.getOwnPropertyDescriptor(globalThis, "location");
+    try {
+      Object.defineProperty(globalThis, "location", {
+        configurable: true,
+        value: { hostname: "bithub-clo.pages.dev" },
+      });
+      assert.equal(_internals.defaultBaseUrl(), PRODUCTION_READ_WORKER_BASE);
+
+      Object.defineProperty(globalThis, "location", {
+        configurable: true,
+        value: { hostname: "localhost" },
+      });
+      assert.equal(_internals.defaultBaseUrl(), "");
+    } finally {
+      if (originalLocation) {
+        Object.defineProperty(globalThis, "location", originalLocation);
+      } else {
+        delete globalThis.location;
+      }
+    }
   });
 });
 
