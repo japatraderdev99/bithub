@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 
 import { handleRequest } from "../../bithub-read-worker/src/index.mjs";
 import { start as startLiveTail, snapshot as snapshotLiveTail } from "./live-tail.mjs";
+import { start as startCockpitTail, snapshot as snapshotCockpitTail } from "./cockpit-tail.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PUBLIC_DIR = resolve(__dirname, "..", "public");
@@ -47,6 +48,30 @@ function maybeBootLiveTail() {
     liveTailError = err && err.message ? err.message : String(err);
     // eslint-disable-next-line no-console
     console.warn(`live-tail disabled: ${liveTailError}`);
+  }
+}
+
+// --------------------------------------------------------------------------
+// Cockpit tail (opt-in via BITHUB_COCKPIT_STATE env var)
+// --------------------------------------------------------------------------
+
+let cockpitTailHandle = null;
+let cockpitTailError = null;
+
+function maybeBootCockpitTail() {
+  const statePath = process.env.BITHUB_COCKPIT_STATE;
+  if (!statePath) return;
+  const eventsPath = process.env.BITHUB_COCKPIT_EVENTS || null;
+  try {
+    cockpitTailHandle = startCockpitTail({ statePath, eventsPath: eventsPath || undefined });
+    // eslint-disable-next-line no-console
+    console.log(
+      `cockpit-tail enabled: state=${statePath} events=${eventsPath || "(default)"}`
+    );
+  } catch (err) {
+    cockpitTailError = err && err.message ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(`cockpit-tail disabled: ${cockpitTailError}`);
   }
 }
 
@@ -120,6 +145,71 @@ function isLivePath(path) {
     || path === "/live/scanner"
     || path === "/live/events"
     || path === "/live/raw";
+}
+
+function handleCockpitRequest(req, res, path) {
+  if (req.method !== "GET") {
+    res.writeHead(405, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Allow": "GET",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+    });
+    res.end("method not allowed");
+    return;
+  }
+  if (!cockpitTailHandle) {
+    jsonRes(res, 503, {
+      error: "cockpit tail not enabled",
+      hint:
+        "set BITHUB_COCKPIT_STATE (and optionally BITHUB_COCKPIT_EVENTS) before starting dev-server; apply the monitor-export patch from bithub-vault/03-Design/monitor-export-patch.py to your monitor_all.py",
+      detail: cockpitTailError || null,
+    });
+    return;
+  }
+  const snap = snapshotCockpitTail(cockpitTailHandle);
+
+  if (path === "/cockpit/state") {
+    jsonRes(res, 200, {
+      state: snap.state,
+      started_at: snap.startedAt,
+      system: snap.system,
+    });
+    return;
+  }
+  if (path === "/cockpit/events") {
+    const url = new URL(req.url, "http://localhost");
+    const sinceRaw = url.searchParams.get("since");
+    const since = sinceRaw == null ? null : Number(sinceRaw);
+    const symbol = url.searchParams.get("symbol");
+    const type = url.searchParams.get("type");
+    const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 100)));
+    let events = snap.recentEvents;
+    if (since != null && Number.isFinite(since)) {
+      events = events.filter((e) => typeof e.ts === "number" && e.ts > since);
+    }
+    if (symbol) {
+      events = events.filter((e) => e.symbol === symbol);
+    }
+    if (type) {
+      events = events.filter((e) => e.type === type);
+    }
+    if (events.length > limit) {
+      events = events.slice(events.length - limit);
+    }
+    jsonRes(res, 200, { events });
+    return;
+  }
+  if (path === "/cockpit/system") {
+    jsonRes(res, 200, { system: snap.system, started_at: snap.startedAt });
+    return;
+  }
+  jsonRes(res, 404, { error: "unknown cockpit route" });
+}
+
+function isCockpitPath(path) {
+  return path.startsWith("/cockpit/");
 }
 
 const MIME_TYPES = Object.freeze({
@@ -252,6 +342,11 @@ export async function handle(req, res) {
       logLine(req, res.statusCode || 200, "live", Date.now() - start);
       return;
     }
+    if (isCockpitPath(path)) {
+      handleCockpitRequest(req, res, path);
+      logLine(req, res.statusCode || 200, "cockpit", Date.now() - start);
+      return;
+    }
     if (isReadWorkerPath(path)) {
       const webReq = nodeRequestToWebRequest(req);
       const webRes = await handleRequest(webReq);
@@ -344,6 +439,7 @@ const invokedDirectly = (() => {
 
 if (invokedDirectly) {
   maybeBootLiveTail();
+  maybeBootCockpitTail();
   const server = createDevServer();
   server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
@@ -352,7 +448,7 @@ if (invokedDirectly) {
         `(public=${PUBLIC_DIR})`
     );
     console.log(
-      "  routes: /v1/* -> read-worker skeleton; /live/* -> live tail (if enabled); * -> static (public/)"
+      "  routes: /v1/* -> read-worker skeleton; /live/* -> live tail (if enabled); /cockpit/* -> cockpit tail (if enabled); * -> static (public/)"
     );
   });
 }

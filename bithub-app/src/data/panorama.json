@@ -1,0 +1,41 @@
+{
+  "as_of": "2026-05-27T13:50:00Z",
+  "kpis": [
+    { "label": "BTC", "value": 67234.12, "change_pct": 1.24, "venue": "Bybit" },
+    { "label": "ETH", "value": 3421.55, "change_pct": -0.42, "venue": "Bybit" },
+    { "label": "SOL", "value": 152.31, "change_pct": 3.81, "venue": "Bybit" },
+    { "label": "Fear & Greed", "value": 62, "change_pct": 4.0, "venue": "Index", "scale": "0-100" }
+  ],
+  "indices": [
+    { "name": "S&P 500 fut", "value": 5821.4, "change_pct": 0.32, "sparkline": [5810, 5814, 5808, 5815, 5820, 5822, 5818, 5821] },
+    { "name": "NASDAQ fut", "value": 20342.8, "change_pct": 0.61, "sparkline": [20280, 20290, 20305, 20320, 20335, 20330, 20340, 20342] },
+    { "name": "Nikkei", "value": 38420.5, "change_pct": -0.18, "sparkline": [38510, 38490, 38450, 38440, 38430, 38420, 38415, 38420] },
+    { "name": "Hang Seng", "value": 19850.2, "change_pct": 1.05, "sparkline": [19640, 19680, 19720, 19770, 19810, 19830, 19840, 19850] },
+    { "name": "DXY", "value": 104.12, "change_pct": -0.21, "sparkline": [104.4, 104.35, 104.28, 104.22, 104.18, 104.14, 104.13, 104.12] },
+    { "name": "Gold", "value": 2618.3, "change_pct": 0.48, "sparkline": [2605, 2608, 2611, 2614, 2615, 2617, 2618, 2618] }
+  ],
+  "bybit_sectors": [
+    { "sector": "Memecoin", "perf_24h_pct": 4.12, "volume_24h_usd": 1.84e9, "leaders": ["DOGE", "WIF", "PEPE"] },
+    { "sector": "AI", "perf_24h_pct": 2.81, "volume_24h_usd": 920e6, "leaders": ["FET", "RNDR", "TAO"] },
+    { "sector": "Layer1", "perf_24h_pct": 1.55, "volume_24h_usd": 3.2e9, "leaders": ["SOL", "AVAX", "SUI"] },
+    { "sector": "Layer2", "perf_24h_pct": 0.74, "volume_24h_usd": 580e6, "leaders": ["ARB", "OP", "STRK"] },
+    { "sector": "DeFi", "perf_24h_pct": -0.32, "volume_24h_usd": 410e6, "leaders": ["UNI", "AAVE", "MKR"] },
+    { "sector": "Gaming", "perf_24h_pct": -1.18, "volume_24h_usd": 220e6, "leaders": ["IMX", "BEAM", "RON"] },
+    { "sector": "Privacy", "perf_24h_pct": -2.45, "volume_24h_usd": 88e6, "leaders": ["XMR", "ZEC", "DASH"] },
+    { "sector": "Infrastructure", "perf_24h_pct": 0.91, "volume_24h_usd": 670e6, "leaders": ["LINK", "GRT", "FIL"] }
+  ],
+  "funding_rates": [
+    { "symbol": "BTCUSDT", "rate_8h_pct": 0.0103, "next_at": "2026-05-27T16:00:00Z" },
+    { "symbol": "ETHUSDT", "rate_8h_pct": 0.0089, "next_at": "2026-05-27T16:00:00Z" },
+    { "symbol": "SOLUSDT", "rate_8h_pct": 0.0214, "next_at": "2026-05-27T16:00:00Z" },
+    { "symbol": "DOGEUSDT", "rate_8h_pct": 0.0312, "next_at": "2026-05-27T16:00:00Z" },
+    { "symbol": "WIFUSDT", "rate_8h_pct": 0.0498, "next_at": "2026-05-27T16:00:00Z" },
+    { "symbol": "PEPEUSDT", "rate_8h_pct": -0.0021, "next_at": "2026-05-27T16:00:00Z" }
+  ],
+  "news_headlines": [
+    { "ts": "2026-05-27T12:15:00Z", "source": "Bloomberg", "headline": "Fed signals patience on next rate move as core PCE eases", "severity": "macro-positive" },
+    { "ts": "2026-05-27T11:42:00Z", "source": "Reuters", "headline": "ETH spot ETF inflows hit 14-day high", "severity": "crypto-positive" },
+    { "ts": "2026-05-27T10:08:00Z", "source": "CoinDesk", "headline": "Bybit announces new perpetuals listing for memecoin basket", "severity": "venue-neutral" },
+    { "ts": "2026-05-27T08:22:00Z", "source": "Wu Blockchain", "headline": "Mt. Gox creditor distributions resume; ~12k BTC scheduled", "severity": "crypto-bearish" }
+  ]
+}

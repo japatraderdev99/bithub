@@ -1,0 +1,638 @@
+[
+  {
+    "id": "trend-surf-scalp-v1-20260528",
+    "name": "Trend Surf Scalp 5m",
+    "regime": "scalp",
+    "timeframe": "5m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "HYPE/USDT:USDT",
+      "LIT/USDT:USDT",
+      "NEAR/USDT:USDT"
+    ],
+    "sharpe": 0,
+    "win_rate_pct": 0,
+    "total_return_pct": 0,
+    "max_dd_pct": 0,
+    "trade_count": 0,
+    "last_backtest_ts": "2026-05-28T21:50:00Z",
+    "freqtrade_version": "monitor-v4",
+    "tags": [
+      "trend-surf",
+      "EMA9",
+      "EMA21",
+      "multi-timeframe",
+      "shadow-first"
+    ],
+    "content_hash": "sha256:trend-surf-scalp-v1-20260528-needs-canonical-hash",
+    "status": "shadow",
+    "collection_mode": "shadow",
+    "readiness": "draft",
+    "hypothesis": "Surfar pullbacks em tendencia ja estabelecida, usando 1h/15m para bias e 5m/1m+tape para timing.",
+    "timeframes": {
+      "regime": [
+        "1h",
+        "4h"
+      ],
+      "setup": [
+        "15m",
+        "5m"
+      ],
+      "trigger": [
+        "1m",
+        "tape"
+      ]
+    },
+    "entry_model": {
+      "bias": "BTC/ETH e alt alinhados; evitar trades contra spike/flush macro.",
+      "anchor": "EMA9 5m para tendencia forte; EMA21 5m para tendencia normal.",
+      "ttl_sec": 20,
+      "volume_min": 0.8,
+      "score_min": 75
+    },
+    "exit_model": {
+      "mfe_lock_pct": 0.35,
+      "lock_profit_pct": 0.18,
+      "soft_sl_tape_contra": 0.72,
+      "trail": "EMA9/EMA21 com ATR e tape factor"
+    },
+    "routing_features": [
+      "btc_eth_bias",
+      "volatility_regime",
+      "alt_trend_quality",
+      "volume_ratio",
+      "tape_flow",
+      "fill_latency_sec",
+      "mfe_mae_labels"
+    ],
+    "next_action": "Rodar shadow contra todos os sinais antes de live_canary."
+  },
+  {
+    "id": "btc-lead-alt-echo-v1-20260528",
+    "name": "BTC-Lead Alt-Echo Scalp",
+    "regime": "scalp",
+    "timeframe": "1m/5m",
+    "pair_universe": [
+      "BTCUSDT -> ETHUSDT",
+      "BTCUSDT -> SOLUSDT",
+      "BTCUSDT -> BNBUSDT",
+      "BTCUSDT -> XRPUSDT",
+      "BTCUSDT -> HYPEUSDT"
+    ],
+    "sharpe": 0,
+    "win_rate_pct": 0,
+    "total_return_pct": 0,
+    "max_dd_pct": 0,
+    "trade_count": 0,
+    "last_backtest_ts": "2026-05-28T22:30:00Z",
+    "freqtrade_version": "shadow-runner",
+    "tags": [
+      "btc-lead",
+      "alt-echo",
+      "beta",
+      "residual",
+      "correlation",
+      "shadow-first"
+    ],
+    "content_hash": "sha256:btc-lead-alt-echo-v1-20260528-needs-canonical-hash",
+    "status": "shadow",
+    "collection_mode": "shadow",
+    "readiness": "draft",
+    "hypothesis": "Quando BTC impulsiona forte e uma alt beta-correlacionada ainda nao acompanhou a regressao, existe janela curta de catch-up entre 2-8 minutos.",
+    "timeframes": {
+      "regime": [
+        "1h",
+        "4h rolling beta"
+      ],
+      "setup": [
+        "5m BTC impulse",
+        "5m alt residual"
+      ],
+      "trigger": [
+        "1m",
+        "tape/book opcional"
+      ]
+    },
+    "entry_model": {
+      "bias": "BTC como lead signal; alt entra no mesmo lado se beta/correlacao estaveis e residual atrasado.",
+      "anchor": "Residual alt vs regressao BTC; nao media movel de preco.",
+      "ttl_sec": 30,
+      "volume_min": 1.35,
+      "score_min": 70
+    },
+    "exit_model": {
+      "mfe_lock_pct": 0,
+      "lock_profit_pct": 0.18,
+      "soft_sl_tape_contra": 0.5,
+      "trail": "Take quando residual converge; stop se BTC reverte 50% do impulso; saida se alt nao ecoa em ~90s."
+    },
+    "routing_features": [
+      "btc_impulse_pct",
+      "btc_impulse_sigma",
+      "btc_volume_ratio",
+      "beta_4h",
+      "corr_4h",
+      "alt_residual_z",
+      "lag_pct",
+      "lead_reversal"
+    ],
+    "next_action": "Rodar shadow/read-only contra alts grandes e comparar por regime antes de qualquer live_canary."
+  },
+  {
+    "id": "monitor-v4-live-scout-20260528",
+    "name": "Monitor v4 Live Scout",
+    "regime": "scalp",
+    "timeframe": "5m",
+    "pair_universe": [
+      "top-100 USDT perps"
+    ],
+    "sharpe": 0,
+    "win_rate_pct": 0,
+    "total_return_pct": -10.52,
+    "max_dd_pct": -10.52,
+    "trade_count": 3,
+    "last_backtest_ts": "2026-05-28T21:50:00Z",
+    "freqtrade_version": "monitor-v4",
+    "tags": [
+      "monitor-v4",
+      "tape-gate",
+      "live-canary",
+      "deprecated-for-live"
+    ],
+    "content_hash": "sha256:monitor-v4-live-scout-20260528-needs-canonical-hash",
+    "status": "deprecated",
+    "collection_mode": "shadow",
+    "readiness": "research-only",
+    "hypothesis": "Scanner amplo de momentum/tape em alts; util para gerar dados, mas Round 3 mostrou fills tardios e entradas em volume fraco.",
+    "timeframes": {
+      "regime": [
+        "5m",
+        "15m",
+        "1h"
+      ],
+      "setup": [
+        "5m",
+        "15m",
+        "1h"
+      ],
+      "trigger": [
+        "tape"
+      ]
+    },
+    "entry_model": {
+      "bias": "Alinhamento 5m/15m/1h na alt.",
+      "anchor": "EMA9 5m via limit",
+      "ttl_sec": 120,
+      "volume_min": 0,
+      "score_min": 65
+    },
+    "exit_model": {
+      "mfe_lock_pct": 0,
+      "soft_sl_tape_contra": 0.72,
+      "trail": "EMA9/EMA21 com ATR e tape factor"
+    },
+    "routing_features": [
+      "score",
+      "rr",
+      "tape_entry_flow",
+      "btc_eth_context",
+      "fill_latency_sec",
+      "native_sltp_attach_path"
+    ],
+    "next_action": "Manter em shadow para comparar rejeicoes e evoluir score; nao rearmar live sem Trend Surf v1."
+  },
+  {
+    "id": "abcdef01-2345-6789-abcd-ef0123456789",
+    "name": "EMA-ADX Scalp 5m",
+    "regime": "scalp",
+    "timeframe": "5m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT"
+    ],
+    "sharpe": 1.82,
+    "win_rate_pct": 54.2,
+    "total_return_pct": 18.3,
+    "max_dd_pct": -7.4,
+    "trade_count": 412,
+    "last_backtest_ts": "2026-05-25T18:42:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "EMA",
+      "ADX",
+      "ATR",
+      "volume-filter"
+    ],
+    "content_hash": "sha256:8b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c"
+  },
+  {
+    "id": "fedcba98-7654-3210-fedc-ba9876543210",
+    "name": "Trend Pullback Swing 1h",
+    "regime": "swing",
+    "timeframe": "1h",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT"
+    ],
+    "sharpe": 2.41,
+    "win_rate_pct": 61.8,
+    "total_return_pct": 34.7,
+    "max_dd_pct": -11.2,
+    "trade_count": 96,
+    "last_backtest_ts": "2026-05-24T09:14:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "EMA-50",
+      "RSI-divergence",
+      "support-bounce"
+    ],
+    "content_hash": "sha256:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+  },
+  {
+    "id": "11111111-2222-3333-4444-555555555555",
+    "name": "Funding Rate Fade",
+    "regime": "fade",
+    "timeframe": "15m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT",
+      "DOGE/USDT:USDT"
+    ],
+    "sharpe": 1.35,
+    "win_rate_pct": 48.5,
+    "total_return_pct": 11.2,
+    "max_dd_pct": -5.8,
+    "trade_count": 278,
+    "last_backtest_ts": "2026-05-23T22:50:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "funding",
+      "mean-reversion",
+      "extreme-oi"
+    ],
+    "content_hash": "sha256:9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0"
+  },
+  {
+    "id": "22222222-3333-4444-5555-666666666666",
+    "name": "Breakout Position 4h",
+    "regime": "position",
+    "timeframe": "4h",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT"
+    ],
+    "sharpe": 1.97,
+    "win_rate_pct": 42.1,
+    "total_return_pct": 52.8,
+    "max_dd_pct": -18.6,
+    "trade_count": 38,
+    "last_backtest_ts": "2026-05-22T14:00:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "Donchian",
+      "ATR-stop",
+      "trail"
+    ],
+    "content_hash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+  },
+  {
+    "id": "33333333-4444-5555-6666-777777777777",
+    "name": "OB Imbalance Scalp 1m",
+    "regime": "scalp",
+    "timeframe": "1m",
+    "pair_universe": [
+      "BTC/USDT:USDT"
+    ],
+    "sharpe": 1.45,
+    "win_rate_pct": 56.7,
+    "total_return_pct": 9.2,
+    "max_dd_pct": -4.1,
+    "trade_count": 1241,
+    "last_backtest_ts": "2026-05-26T03:18:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "orderbook",
+      "imbalance",
+      "tape-reading"
+    ],
+    "content_hash": "sha256:7e6d5c4b3a29180716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f"
+  },
+  {
+    "id": "44444444-5555-6666-7777-888888888888",
+    "name": "Vol Compression Swing",
+    "regime": "swing",
+    "timeframe": "1h",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT",
+      "AVAX/USDT:USDT"
+    ],
+    "sharpe": 1.68,
+    "win_rate_pct": 58.3,
+    "total_return_pct": 22.5,
+    "max_dd_pct": -9.7,
+    "trade_count": 145,
+    "last_backtest_ts": "2026-05-21T16:30:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "BB-width",
+      "ATR-percentile",
+      "squeeze"
+    ],
+    "content_hash": "sha256:5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c"
+  },
+  {
+    "id": "55555555-6666-7777-8888-999999999999",
+    "name": "RSI Mean Reversion Fade",
+    "regime": "fade",
+    "timeframe": "5m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT"
+    ],
+    "sharpe": 0.94,
+    "win_rate_pct": 52.1,
+    "total_return_pct": 5.8,
+    "max_dd_pct": -8.3,
+    "trade_count": 583,
+    "last_backtest_ts": "2026-05-20T11:42:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "RSI-30/70",
+      "regime-filter"
+    ],
+    "content_hash": "sha256:3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d"
+  },
+  {
+    "id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+    "name": "Macro Trend Position 1d",
+    "regime": "position",
+    "timeframe": "1d",
+    "pair_universe": [
+      "BTC/USDT:USDT"
+    ],
+    "sharpe": 2.18,
+    "win_rate_pct": 38.5,
+    "total_return_pct": 89.2,
+    "max_dd_pct": -24.1,
+    "trade_count": 18,
+    "last_backtest_ts": "2026-05-19T20:08:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "200-MA",
+      "halving-cycle"
+    ],
+    "content_hash": "sha256:2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c"
+  },
+  {
+    "id": "77777777-8888-9999-aaaa-bbbbbbbbbbbb",
+    "name": "Sector Rotation Long-Only",
+    "regime": "swing",
+    "timeframe": "4h",
+    "pair_universe": [
+      "SOL/USDT:USDT",
+      "AVAX/USDT:USDT",
+      "SUI/USDT:USDT"
+    ],
+    "sharpe": 1.52,
+    "win_rate_pct": 49.8,
+    "total_return_pct": 17.4,
+    "max_dd_pct": -12.5,
+    "trade_count": 67,
+    "last_backtest_ts": "2026-05-18T08:15:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "sector-momentum",
+      "long-only"
+    ],
+    "content_hash": "sha256:1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b"
+  },
+  {
+    "id": "88888888-9999-aaaa-bbbb-cccccccccccc",
+    "name": "Funding Extreme Scalp",
+    "regime": "scalp",
+    "timeframe": "15m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "DOGE/USDT:USDT",
+      "WIF/USDT:USDT"
+    ],
+    "sharpe": 1.71,
+    "win_rate_pct": 51.4,
+    "total_return_pct": 15.6,
+    "max_dd_pct": -6.2,
+    "trade_count": 348,
+    "last_backtest_ts": "2026-05-26T22:10:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "funding-spike",
+      "fast-exit"
+    ],
+    "content_hash": "sha256:09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a"
+  },
+  {
+    "id": "99999999-aaaa-bbbb-cccc-dddddddddddd",
+    "name": "OI Divergence Fade",
+    "regime": "fade",
+    "timeframe": "1h",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT"
+    ],
+    "sharpe": 1.12,
+    "win_rate_pct": 53.7,
+    "total_return_pct": 8.4,
+    "max_dd_pct": -7.1,
+    "trade_count": 192,
+    "last_backtest_ts": "2026-05-17T13:50:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "OI",
+      "price-divergence",
+      "contrarian"
+    ],
+    "content_hash": "sha256:f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09"
+  },
+  {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "name": "ATR Breakout Swing 30m",
+    "regime": "swing",
+    "timeframe": "30m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT"
+    ],
+    "sharpe": 1.89,
+    "win_rate_pct": 47.2,
+    "total_return_pct": 28.1,
+    "max_dd_pct": -14.3,
+    "trade_count": 184,
+    "last_backtest_ts": "2026-05-16T06:22:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "ATR-band",
+      "breakout",
+      "volume-confirm"
+    ],
+    "content_hash": "sha256:e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8"
+  },
+  {
+    "id": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+    "name": "Macro Position - ETH",
+    "regime": "position",
+    "timeframe": "1d",
+    "pair_universe": [
+      "ETH/USDT:USDT"
+    ],
+    "sharpe": 1.62,
+    "win_rate_pct": 41.7,
+    "total_return_pct": 47.3,
+    "max_dd_pct": -22.8,
+    "trade_count": 24,
+    "last_backtest_ts": "2026-05-15T19:30:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "ETH-merge-cycle",
+      "long-bias"
+    ],
+    "content_hash": "sha256:d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7"
+  },
+  {
+    "id": "cccccccc-dddd-eeee-ffff-000000000000",
+    "name": "VWAP Reversion Scalp",
+    "regime": "scalp",
+    "timeframe": "1m",
+    "pair_universe": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT"
+    ],
+    "sharpe": 1.28,
+    "win_rate_pct": 55.9,
+    "total_return_pct": 7.2,
+    "max_dd_pct": -3.8,
+    "trade_count": 2103,
+    "last_backtest_ts": "2026-05-26T18:00:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "VWAP",
+      "intraday-reversion"
+    ],
+    "content_hash": "sha256:c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6"
+  },
+  {
+    "id": "dddddddd-eeee-ffff-0000-111111111111",
+    "name": "Liquidity Sweep Fade",
+    "regime": "fade",
+    "timeframe": "5m",
+    "pair_universe": [
+      "BTC/USDT:USDT"
+    ],
+    "sharpe": 2.05,
+    "win_rate_pct": 59.1,
+    "total_return_pct": 21.8,
+    "max_dd_pct": -5.4,
+    "trade_count": 156,
+    "last_backtest_ts": "2026-05-27T01:15:00Z",
+    "freqtrade_version": "2026.1.0",
+    "tags": [
+      "sweep",
+      "stop-hunt",
+      "liquidity"
+    ],
+    "content_hash": "sha256:b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5"
+  },
+  {
+    "id": "btc-lead-alt-echo-sui-regime-v1-20260529",
+    "name": "BTC-Lead Alt-Echo SUI Regime-Gated v1",
+    "regime": "scalp",
+    "timeframe": "1m/5m",
+    "pair_universe": [
+      "BTCUSDT -> SUIUSDT"
+    ],
+    "sharpe": 0,
+    "win_rate_pct": 65.6,
+    "total_return_pct": 2.153,
+    "max_dd_pct": -0.541,
+    "trade_count": 31,
+    "last_backtest_ts": "2026-05-29T02:14:00Z",
+    "freqtrade_version": "regime-gated-shadow",
+    "tags": [
+      "btc-lead",
+      "alt-echo",
+      "regime-gated",
+      "scalp",
+      "SUI",
+      "shadow-first",
+      "h_research_bench_004"
+    ],
+    "content_hash": "sha256:80b938dc97ccdba80ae71fe0b8b71e73b2a6145c094016c38419b10c129a2cdb",
+    "status": "shadow",
+    "collection_mode": "shadow",
+    "readiness": "candidate",
+    "hypothesis": "BTC-Lead Alt-Echo so tem edge persistente em SUI quando filtrado por (NOT Wed/Fri UTC) AND (US/Overlap session UTC) AND (SUI ATR_pct >= 0.10%). Avg net +0.069%/trade em 35 dias, PF 2.22, 4/5 janelas historicas positivas (cross-validation temporal). Descoberto via regime mining sobre os 81 trades historicos da BTC-Lead base.",
+    "timeframes": {
+      "regime": [
+        "5m",
+        "15m",
+        "session_utc",
+        "day_of_week_utc"
+      ],
+      "setup": [
+        "5m",
+        "ATR_14m_1m"
+      ],
+      "trigger": [
+        "1m",
+        "lead_impulse"
+      ]
+    },
+    "entry_model": {
+      "lead": "BTCUSDT",
+      "target": "SUIUSDT",
+      "residual_z_min": 0.3,
+      "impulse_sigma_min": 2.2,
+      "volume_ratio_min": 1.35,
+      "min_target_pct": 0.34,
+      "max_target_pct": 0.75,
+      "max_hold_min": 8,
+      "gates": {
+        "exclude_day_of_week_utc": [
+          "wed",
+          "fri"
+        ],
+        "allow_sessions_utc": [
+          "us",
+          "overlap"
+        ],
+        "min_sui_atr_pct": 0.1,
+        "atr_window": 14
+      }
+    },
+    "exit_model": {
+      "stop_pct": 0.35,
+      "target_residual_capture": 0.75,
+      "no_echo_exit_min": 3,
+      "no_echo_min_pct": 0.08,
+      "max_hold_min": 8,
+      "lead_reversal_half_impulse": true
+    },
+    "routing_features": [
+      "day_of_week_utc",
+      "session_utc",
+      "sui_atr_pct",
+      "btc_impulse_sigma",
+      "residual_z",
+      "beta_5m",
+      "corr_5m",
+      "volume_ratio_btc"
+    ],
+    "next_action": "Shadow runner ativo. Re-avaliar apos >=30 signals reais coletados em D1 (~5-7 dias). Criterio de promocao: avg_net >= +0.04% AND win_rate >= 55% -> paper."
+  }
+]

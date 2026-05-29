@@ -1,0 +1,54 @@
+{
+  "launcher_status": {
+    "monitor_heartbeat_ts": "2026-05-27T13:51:42Z",
+    "monitor_state": "ready",
+    "command_channel_path": "/Users/gabrielcasarin/Documents/Project Trading Agora Vai/freqtrade/user_data/bithub_commands/",
+    "active_session_id": "abcdef01-2345-6789-abcd-ef0123456789",
+    "kill_switch_armed": false
+  },
+  "audit_log": [
+    {
+      "ts": "2026-05-27T11:15:03Z",
+      "actor": "operator",
+      "action": "launch",
+      "strategy_id": "abcdef01-2345-6789-abcd-ef0123456789",
+      "strategy_name": "EMA-ADX Scalp 5m",
+      "status": "accepted",
+      "monitor_ack_ms": 142
+    },
+    {
+      "ts": "2026-05-27T09:42:18Z",
+      "actor": "operator",
+      "action": "launch",
+      "strategy_id": "33333333-4444-5555-6666-777777777777",
+      "strategy_name": "OB Imbalance Scalp 1m",
+      "status": "accepted",
+      "monitor_ack_ms": 98
+    },
+    {
+      "ts": "2026-05-27T09:58:42Z",
+      "actor": "operator",
+      "action": "stop",
+      "strategy_id": "33333333-4444-5555-6666-777777777777",
+      "strategy_name": "OB Imbalance Scalp 1m",
+      "status": "accepted",
+      "monitor_ack_ms": 88
+    },
+    {
+      "ts": "2026-05-26T20:11:55Z",
+      "actor": "operator",
+      "action": "launch",
+      "strategy_id": "fedcba98-7654-3210-fedc-ba9876543210",
+      "strategy_name": "Trend Pullback Swing 1h",
+      "status": "rejected",
+      "reason": "Monitor reportou: pair_universe inclui ETH/USDT:USDT mas exchange está rate-limited (>60 ordens/min). Retry após 60s.",
+      "monitor_ack_ms": 312
+    }
+  ],
+  "preflight_checks": {
+    "monitor_alive": true,
+    "command_channel_writable": true,
+    "strategy_spec_resolvable": true,
+    "risk_envelope_within_account_limits": true
+  }
+}

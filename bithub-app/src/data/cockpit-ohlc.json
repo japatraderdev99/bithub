@@ -1,0 +1,30 @@
+{
+  "pair": "BTC/USDT:USDT",
+  "timeframe": "5m",
+  "candles": [
+    { "timestamp": 1748340000000, "open": 66745.5, "high": 66812.3, "low": 66720.1, "close": 66798.4, "volume": 124.5 },
+    { "timestamp": 1748340300000, "open": 66798.4, "high": 66855.7, "low": 66780.2, "close": 66842.1, "volume": 156.2 },
+    { "timestamp": 1748340600000, "open": 66842.1, "high": 66890.0, "low": 66820.5, "close": 66875.3, "volume": 142.8 },
+    { "timestamp": 1748340900000, "open": 66875.3, "high": 66910.2, "low": 66860.7, "close": 66902.5, "volume": 178.4 },
+    { "timestamp": 1748341200000, "open": 66902.5, "high": 66925.8, "low": 66885.1, "close": 66898.0, "volume": 134.1 },
+    { "timestamp": 1748341500000, "open": 66898.0, "high": 66945.2, "low": 66890.0, "close": 66932.4, "volume": 198.6 },
+    { "timestamp": 1748341800000, "open": 66932.4, "high": 66978.5, "low": 66920.8, "close": 66965.1, "volume": 212.3 },
+    { "timestamp": 1748342100000, "open": 66965.1, "high": 67010.0, "low": 66950.5, "close": 66998.7, "volume": 245.7 },
+    { "timestamp": 1748342400000, "open": 66998.7, "high": 67042.3, "low": 66985.2, "close": 67025.8, "volume": 187.4 },
+    { "timestamp": 1748342700000, "open": 67025.8, "high": 67058.1, "low": 67005.4, "close": 67012.9, "volume": 165.2 },
+    { "timestamp": 1748343000000, "open": 67012.9, "high": 67045.7, "low": 66995.3, "close": 67038.2, "volume": 148.9 },
+    { "timestamp": 1748343300000, "open": 67038.2, "high": 67085.6, "low": 67025.1, "close": 67072.4, "volume": 192.7 },
+    { "timestamp": 1748343600000, "open": 67072.4, "high": 67120.5, "low": 67060.8, "close": 67105.3, "volume": 224.5 },
+    { "timestamp": 1748343900000, "open": 67105.3, "high": 67148.2, "low": 67090.7, "close": 67132.1, "volume": 201.8 },
+    { "timestamp": 1748344200000, "open": 67132.1, "high": 67175.4, "low": 67120.0, "close": 67158.6, "volume": 218.3 },
+    { "timestamp": 1748344500000, "open": 67158.6, "high": 67195.8, "low": 67145.2, "close": 67182.7, "volume": 196.5 },
+    { "timestamp": 1748344800000, "open": 67182.7, "high": 67225.3, "low": 67170.1, "close": 67212.5, "volume": 234.7 },
+    { "timestamp": 1748345100000, "open": 67212.5, "high": 67248.9, "low": 67200.4, "close": 67234.1, "volume": 215.2 }
+  ],
+  "trades": [
+    { "id": "t-001", "ts": 1748341500000, "side": "long", "size_pct": 4.5, "entry": 66890.0, "exit": null, "pnl_pct": 0.51, "status": "open" },
+    { "id": "t-002", "ts": 1748338200000, "side": "long", "size_pct": 4.0, "entry": 66640.0, "exit": 66785.0, "pnl_pct": 0.22, "status": "closed" },
+    { "id": "t-003", "ts": 1748334900000, "side": "short", "size_pct": 3.5, "entry": 66920.0, "exit": 66845.0, "pnl_pct": 0.11, "status": "closed" },
+    { "id": "t-004", "ts": 1748331600000, "side": "long", "size_pct": 4.0, "entry": 66510.0, "exit": 66495.0, "pnl_pct": -0.02, "status": "closed" }
+  ]
+}

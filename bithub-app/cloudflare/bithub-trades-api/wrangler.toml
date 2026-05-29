@@ -1,0 +1,17 @@
+name = "bithub-trades-api"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+
+# D1 binding — same database created via MCP
+[[d1_databases]]
+binding = "DB"
+database_name = "bithub-trades"
+database_id = "d7171f07-334b-497d-9249-1e67c0d7e841"
+
+# Observability (free tier on the workers.dev sub-domain).
+[observability]
+enabled = true
+
+# Worker version pinning so deploys are deterministic. INGEST_TOKEN is set
+# as a Wrangler secret separately:
+#   wrangler secret put INGEST_TOKEN

@@ -13,6 +13,9 @@ Front end/
 financial-services-main/
 freqtrade-develop/
 
+# Private trading-domain documentation (operator-authored, not part of public repo)
+/SISTEMA_TRADING.md
+
 # Local tooling caches
 .claude/
 

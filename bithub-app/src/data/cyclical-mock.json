@@ -1,0 +1,73 @@
+{
+  "active_session": {
+    "strategy_id": "abcdef01-2345-6789-abcd-ef0123456789",
+    "strategy_name": "EMA-ADX Scalp 5m",
+    "regime": "scalp",
+    "started_at": "2026-05-27T11:15:00Z",
+    "elapsed_min": 155,
+    "pair": "BTC/USDT:USDT",
+    "side": "long",
+    "entry_price": 66890.0,
+    "current_price": 67234.12,
+    "unrealized_pnl_pct": 0.51,
+    "unrealized_pnl_usd": 51.2,
+    "stop_loss": 66520.0,
+    "take_profit": 67710.0,
+    "size_pct_of_account": 4.5
+  },
+  "cycle_config": {
+    "interval_min": 2,
+    "next_analysis_in_sec": 47,
+    "auto_apply": false
+  },
+  "last_analyses": [
+    {
+      "ts": "2026-05-27T13:48:00Z",
+      "verdict": "hold",
+      "rationale": "Preço acima da entrada, ADX subindo de 24 → 27, volume nos últimos 3 candles 1.4x média. Setup ainda válido. Não recomendo mover stop ou TP enquanto ADX > 25 e momento positivo.",
+      "suggested_adjustments": [],
+      "confidence": 0.74,
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "cost_usd": 0.004
+    },
+    {
+      "ts": "2026-05-27T13:46:00Z",
+      "verdict": "trail",
+      "rationale": "Preço subiu +0.4% nos últimos 2min. Considere trailing stop para 66780 (BE+small profit), preservando upside até o TP em 67710.",
+      "suggested_adjustments": [
+        { "field": "stop_loss", "from": 66520.0, "to": 66780.0, "reason": "trail to BE+small" }
+      ],
+      "confidence": 0.62,
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "cost_usd": 0.004
+    },
+    {
+      "ts": "2026-05-27T13:44:00Z",
+      "verdict": "hold",
+      "rationale": "Sem mudança material desde último ciclo. Manter posição.",
+      "suggested_adjustments": [],
+      "confidence": 0.69,
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "cost_usd": 0.003
+    },
+    {
+      "ts": "2026-05-27T13:42:00Z",
+      "verdict": "hold",
+      "rationale": "Entrada validada, preço movendo na direção esperada. Mantém setup original.",
+      "suggested_adjustments": [],
+      "confidence": 0.71,
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "cost_usd": 0.003
+    },
+    {
+      "ts": "2026-05-27T13:40:00Z",
+      "verdict": "monitor",
+      "rationale": "Primeiros 2min após entrada. Sem sinal contrário, mantendo monitoramento padrão.",
+      "suggested_adjustments": [],
+      "confidence": 0.55,
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "cost_usd": 0.003
+    }
+  ],
+  "budget_remaining_today_usd": 0.62
+}

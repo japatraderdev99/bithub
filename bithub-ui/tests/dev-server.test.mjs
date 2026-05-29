@@ -166,6 +166,92 @@ describe("/live/* local-only sidecar guard", () => {
   });
 });
 
+describe("/cockpit/* local-only sidecar guard", () => {
+  it("GET /cockpit/state is disabled unless explicitly enabled", async () => {
+    const res = await fetch(`${base}/cockpit/state`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.error, "cockpit tail not enabled");
+    assert.equal(body.detail, null);
+    assert.ok(typeof body.hint === "string");
+    // The hint must point at the patch source-of-truth so an operator
+    // can resolve the 503 without spelunking.
+    assert.ok(body.hint.includes("BITHUB_COCKPIT_STATE"));
+    assert.ok(body.hint.includes("monitor-export-patch"));
+  });
+
+  it("GET /cockpit/events is disabled unless explicitly enabled", async () => {
+    const res = await fetch(`${base}/cockpit/events`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.error, "cockpit tail not enabled");
+  });
+
+  it("GET /cockpit/system is disabled unless explicitly enabled", async () => {
+    const res = await fetch(`${base}/cockpit/system`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.error, "cockpit tail not enabled");
+  });
+
+  it("POST /cockpit/state is rejected read-only with Allow header", async () => {
+    const res = await fetch(`${base}/cockpit/state`, { method: "POST" });
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("Allow"), "GET");
+    assert.equal(await res.text(), "method not allowed");
+  });
+
+  it("unknown /cockpit/foo is handled by the cockpit guard (503 disabled)", async () => {
+    // /cockpit/* is the cockpit namespace; the disabled-guard answers
+    // any path in it before route dispatch happens. This keeps unknown
+    // routes from falling through to static and serving HTML.
+    const res = await fetch(`${base}/cockpit/foo`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.error, "cockpit tail not enabled");
+  });
+
+  it("static nav marks Cockpit link as local-only", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "index.html"), "utf8");
+    assert.ok(body.includes('data-nav="/cockpit" data-local-only="true"'));
+  });
+
+  it("Cockpit view does not embed operator-local paths", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "app", "views", "cockpit.mjs"), "utf8");
+    assert.ok(!body.toLowerCase().includes("/users/"));
+    assert.ok(!body.includes("Project Trading Agora Vai"));
+  });
+
+  it("Cockpit view advertises the patch hint, not raw monitor internals", async () => {
+    const body = await readFile(join(PUBLIC_DIR, "app", "views", "cockpit.mjs"), "utf8");
+    // disabled-state hint should point to the vault patch
+    assert.ok(body.includes("monitor-export-patch"));
+    assert.ok(body.includes("BITHUB_COCKPIT_STATE"));
+  });
+
+  it("503 response body for disabled cockpit does not leak operator paths", async () => {
+    // Codex review finding #1: defense in depth at the HTTP layer.
+    // The 503 path runs without a live tail handle so no absolute path
+    // can leak from there. Confirm explicitly.
+    const res = await fetch(`${base}/cockpit/state`);
+    const text = await res.text();
+    assert.ok(!text.toLowerCase().includes("/users/"), `leaked home: ${text.slice(0,120)}`);
+    assert.ok(!text.includes("/var/folders/"), `leaked tmp: ${text.slice(0,120)}`);
+    assert.ok(!text.includes(".json\""), `leaked file path: ${text.slice(0,120)}`);
+  });
+
+  it("Cockpit tail module exposes path-safety guard", async () => {
+    // Codex review finding #3: cockpit-tail must enforce isPathSafe
+    // before starting a tail on arbitrary BITHUB_COCKPIT_STATE values.
+    const mod = await import("../scripts/cockpit-tail.mjs");
+    assert.equal(typeof mod.isPathSafe, "function");
+    assert.equal(mod.isPathSafe("/Users/x/bithub-vault/state.json"), false);
+    assert.equal(mod.isPathSafe("/etc/passwd"), false);
+    assert.equal(mod.isPathSafe("/Users/x/.ssh/id_rsa"), false);
+    assert.equal(mod.isPathSafe("/tmp/bithub_monitor_state.json"), true);
+  });
+});
+
 describe("hygiene", () => {
   it("PUBLIC_DIR resolves under bithub-ui/public", () => {
     assert.ok(PUBLIC_DIR.endsWith("/bithub-ui/public"));

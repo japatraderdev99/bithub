@@ -16,6 +16,7 @@ import { render as renderBundle } from "./views/bundle.mjs";
 import { render as renderBlobs } from "./views/blobs.mjs";
 import { render as renderDevStates } from "./views/dev-states.mjs";
 import { render as renderLive } from "./views/live.mjs";
+import { render as renderCockpit } from "./views/cockpit.mjs";
 
 // --------------------------------------------------------------------------
 // Routes
@@ -38,6 +39,7 @@ registerRoute(/^\/dev\/states$/, (_p) => ({
   render: renderDevStates,
 }));
 registerRoute(/^\/live$/, (_p) => ({ view: "live", render: renderLive }));
+registerRoute(/^\/cockpit$/, (_p) => ({ view: "cockpit", render: renderCockpit }));
 
 // --------------------------------------------------------------------------
 // Density toggle
@@ -217,6 +219,7 @@ window.addEventListener("keydown", (ev) => {
       b: "/bundle/BTC%2FUSDT%3AUSDT",
       x: "/blobs",
       v: "/dev/states",
+      k: "/cockpit",
     };
     const target = map[ev.key];
     if (target) {
